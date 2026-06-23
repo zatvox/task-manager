@@ -1,0 +1,73 @@
+/* ============================================================================
+   ZV TASK MANAGER · RESPONSIVE (mobile-first overrides)
+   Breakpoints: 320, 640, 1024, 1440, 1920
+   ============================================================================ */
+
+/* --- Base: < 640px (móvil) --- */
+.app-shell { grid-template-columns: 1fr; }
+.sidebar {
+  position: fixed; left: 0; top: 0; width: 84vw; max-width: 300px;
+  transform: translateX(-100%); transition: transform var(--transition-base);
+  z-index: var(--z-sidebar);
+}
+.sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
+.sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: calc(var(--z-sidebar) - 1); }
+.sidebar-backdrop.open { display: block; }
+.topbar__search { display: none; }
+.main-content { padding: var(--space-4); }
+.form-row { grid-template-columns: 1fr; }
+.kanban { grid-template-columns: 1fr; }
+.auth-page { grid-template-columns: 1fr; }
+.auth-page__visual { display: none; }
+.side-panel { width: 100%; min-width: 0; }
+.grid-cards { grid-template-columns: 1fr; }
+.btn { min-height: 44px; }
+
+/* --- ≥ 640px: tablet pequeña --- */
+@media (min-width: 640px) {
+  .main-content { padding: var(--space-5); }
+  .grid-cards { grid-template-columns: repeat(2, 1fr); }
+  .form-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* --- ≥ 1024px: escritorio --- */
+@media (min-width: 1024px) {
+  .app-shell { grid-template-columns: var(--sidebar-width) 1fr; }
+  .sidebar { position: sticky; transform: none; width: auto; max-width: none; }
+  .sidebar-backdrop { display: none !important; }
+  .topbar__search { display: block; }
+  .main-content { padding: var(--space-6); }
+  .grid-cards { grid-template-columns: repeat(3, 1fr); }
+  .kanban { grid-template-columns: repeat(4, minmax(260px, 1fr)); }
+  .auth-page { grid-template-columns: 1fr 1fr; }
+  .auth-page__visual { display: flex; }
+}
+
+/* --- ≥ 1440px --- */
+@media (min-width: 1440px) {
+  .grid-cards { grid-template-columns: repeat(4, 1fr); }
+  .main-content { padding: var(--space-7); }
+}
+
+/* --- ≥ 1920px --- */
+@media (min-width: 1920px) {
+  html { font-size: 17px; }
+}
+
+/* --- Botón hamburguesa (solo visible < 1024px) --- */
+.btn-hamburger { display: inline-flex; }
+@media (min-width: 1024px) {
+  .btn-hamburger { display: none; }
+}
+
+/* --- Calendario responsive --- */
+.calendar-grid { grid-template-columns: repeat(7, 1fr); }
+@media (max-width: 1023px) {
+  .calendar-grid.view-month { grid-template-columns: repeat(7, minmax(80px, 1fr)); overflow-x: auto; }
+  .calendar-grid.view-week { grid-template-columns: repeat(7, minmax(140px, 1fr)); overflow-x: auto; }
+}
+
+/* --- Tablas en móvil: scroll horizontal ya cubierto por .table-wrap --- */
+@media (max-width: 639px) {
+  table.data-table th, table.data-table td { padding: var(--space-2) var(--space-3); font-size: var(--fs-xs); }
+}

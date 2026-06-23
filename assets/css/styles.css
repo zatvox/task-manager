@@ -1,0 +1,197 @@
+/* ============================================================================
+   ZV TASK MANAGER · ESTILOS GLOBALES
+   ============================================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+h1 { font-size: var(--fs-2xl); }
+h2 { font-size: var(--fs-xl); }
+h3 { font-size: var(--fs-lg); }
+h4 { font-size: var(--fs-md); }
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+img { max-width: 100%; display: block; }
+
+button { font-family: inherit; cursor: pointer; }
+
+ul, ol { list-style: none; }
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-300); }
+
+/* ============================================================================
+   LAYOUT GENERAL DE LA APP (post-login)
+   ============================================================================ */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+/* layout-root es transparente al grid: sus hijos (sidebar + main-wrapper)
+   se convierten en ítems directos del grid de app-shell */
+#layout-root { display: contents; }
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: var(--sidebar-width-collapsed) 1fr;
+}
+
+/* --- Sidebar --- */
+.sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: var(--z-sidebar);
+  transition: width var(--transition-base);
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar__brand img { width: 34px; height: 34px; object-fit: contain; }
+.sidebar__brand span { font-family: var(--font-heading); font-weight: 700; font-size: var(--fs-md); white-space: nowrap; }
+
+.sidebar__nav { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-2); }
+
+.sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar__link:hover { background: var(--bg-surface-hover); color: var(--text-primary); text-decoration: none; }
+.sidebar__link.active { background: var(--color-accent-soft); color: var(--color-accent); }
+.sidebar__link .icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+.sidebar__section-title {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  padding: var(--space-4) var(--space-3) var(--space-2);
+}
+
+.sidebar__footer { padding: var(--space-4); border-top: 1px solid var(--border-subtle); }
+
+/* --- Topbar --- */
+.topbar {
+  height: var(--topbar-height);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-5);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-dropdown);
+}
+
+.topbar__search {
+  flex: 1;
+  max-width: 420px;
+  margin: 0 var(--space-5);
+}
+
+.topbar__actions { display: flex; align-items: center; gap: var(--space-3); }
+
+.main-content { padding: var(--space-6); max-width: 1440px; }
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.page-header__subtitle { color: var(--text-secondary); margin-top: var(--space-1); font-size: var(--fs-sm); }
+
+/* --- Páginas de auth (login/registro) --- */
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.auth-page__visual {
+  background: radial-gradient(circle at 30% 20%, var(--color-secondary) 0%, var(--bg-base) 70%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-7);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-page__visual img { width: 120px; }
+.auth-page__visual h1 { text-align: center; }
+.auth-page__visual p { color: var(--text-secondary); text-align: center; max-width: 380px; }
+
+.auth-page__form-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+}
+
+.auth-card { width: 100%; max-width: 420px; }
+.auth-card__logo { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); }
+.auth-card__logo img { width: 40px; }
+
+.skip-link {
+  position: absolute; left: -999px; top: auto;
+}
+.skip-link:focus {
+  position: fixed; left: var(--space-3); top: var(--space-3); z-index: var(--z-toast);
+  background: var(--color-accent); color: var(--text-on-accent); padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+}

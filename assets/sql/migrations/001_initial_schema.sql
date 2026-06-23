@@ -1,0 +1,5 @@
+-- Migración 001: Esquema inicial completo
+-- Generado: 2026-06-20
+-- Aplica en orden: schema.sql -> rls-policies.sql -> (opcional) seed.sql
+-- Ver assets/sql/schema.sql y assets/sql/rls-policies.sql para el contenido completo.
+-- Este archivo existe como referencia de control de versiones de la base de datos.

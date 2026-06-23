@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crear cuenta · ZV Task Manager</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/images/favicon-32x32.png" />
+  <link rel="manifest" href="../site.webmanifest" />
+  <link rel="stylesheet" href="../assets/css/variables.css" />
+  <link rel="stylesheet" href="../assets/css/styles.css" />
+  <link rel="stylesheet" href="../assets/css/components.css" />
+  <link rel="stylesheet" href="../assets/css/responsive.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">Saltar al contenido</a>
+  <main id="main" class="auth-page">
+    <section class="auth-page__visual" aria-hidden="true">
+      <img src="../assets/images/logo.png" alt="" />
+      <h1>Únete a ZV Task Manager</h1>
+      <p>Crea tu cuenta de agente y empieza a colaborar en empresas, proyectos y tareas.</p>
+    </section>
+    <section class="auth-page__form-area">
+      <div class="auth-card">
+        <div class="auth-card__logo">
+          <img src="../assets/images/logo.png" alt="ZV Task Manager" />
+          <h2>Crear cuenta</h2>
+        </div>
+        <form id="form-registro" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="nombre">Nombre completo</label>
+            <input class="form-control" type="text" id="nombre" name="nombre" required placeholder="Tu nombre" />
+            <p class="form-error">El nombre es obligatorio.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="email">Correo electrónico</label>
+            <input class="form-control" type="email" id="email" name="email" required autocomplete="email" placeholder="tu@empresa.com" />
+            <p class="form-error">Ingresa un correo válido.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="telefono">Teléfono (opcional)</label>
+            <input class="form-control" type="tel" id="telefono" name="telefono" placeholder="+51 999 999 999" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="password">Contraseña</label>
+            <input class="form-control" type="password" id="password" name="password" required minlength="6" placeholder="Mínimo 6 caracteres" />
+            <p class="form-error">La contraseña debe tener al menos 6 caracteres.</p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="btn-registro">
+            <span class="btn-text">Crear cuenta</span>
+          </button>
+          <p style="text-align:center; margin-top: var(--space-4); font-size: var(--fs-sm); color: var(--text-secondary);">
+            ¿Ya tienes cuenta? <a href="login.html">Inicia sesión</a>
+          </p>
+        </form>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="../assets/js/registro.js"></script>
+</body>
+</html>
