@@ -1,7 +1,7 @@
 import { renderLayout } from './layout.js';
 import { inicializarApp, toastExito, toastError, abrirModal, cerrarModal, confirmar } from './main.js';
 import {
-  obtenerEmpresasDelAgente, crearEmpresa, actualizarEmpresa, eliminarEmpresa,
+  listarTodasLasEmpresasConMembresia, crearEmpresa, actualizarEmpresa, eliminarEmpresa,
   listarAgentesDeEmpresa, invitarAgenteAEmpresa, cambiarRolAgenteEmpresa, removerAgenteDeEmpresa
 } from './supabase-data.js';
 import { $, escapeHTML, iniciales } from './utils.js';
@@ -68,18 +68,32 @@ function plantillaPagina() {
   `;
 }
 
+const ETIQUETAS_ROL = { admin: 'Admin', manager: 'Manager', empleado: 'Empleado' };
+
 function tarjetaEmpresa(e) {
+  const esMiembro = e.esMiembro;
+  const badgeClase = esMiembro ? 'badge-estado-completado' : 'badge-estado-archivado';
+  const badgeTexto = esMiembro ? (ETIQUETAS_ROL[e.rol] || e.rol) : 'Sin acceso';
+
   return `
-    <div class="card">
+    <div class="card" style="${!esMiembro ? 'opacity:0.72;' : ''}">
       <div class="card__header">
         <h3 class="card__title">${escapeHTML(e.nombre)}</h3>
-        <span class="badge badge-estado-completado">${escapeHTML(e.rol)}</span>
+        <span class="badge ${badgeClase}">${badgeTexto}</span>
       </div>
       <p style="color:var(--text-secondary); font-size:var(--fs-sm); min-height:40px;">${escapeHTML(e.descripcion || 'Sin descripción')}</p>
       <div style="display:flex; gap:var(--space-2); margin-top:var(--space-4); flex-wrap:wrap;">
-        <button class="btn btn-secondary btn-sm" data-equipo="${e.id}">👥 Equipo</button>
-        ${e.rol === 'admin' ? `<button class="btn btn-tertiary btn-sm" data-editar="${e.id}" data-nombre="${escapeHTML(e.nombre)}" data-descripcion="${escapeHTML(e.descripcion || '')}">✏️ Editar</button>
-        <button class="btn btn-tertiary btn-sm" data-eliminar="${e.id}" style="color:var(--color-danger)">🗑️ Eliminar</button>` : ''}
+        ${esMiembro ? `
+          <button class="btn btn-secondary btn-sm" data-equipo="${e.id}">👥 Equipo</button>
+          ${e.rol === 'admin' ? `
+            <button class="btn btn-tertiary btn-sm" data-editar="${e.id}" data-nombre="${escapeHTML(e.nombre)}" data-descripcion="${escapeHTML(e.descripcion || '')}">✏️ Editar</button>
+            <button class="btn btn-tertiary btn-sm" data-eliminar="${e.id}" style="color:var(--color-danger)">🗑️ Eliminar</button>
+          ` : ''}
+        ` : `
+          <span style="font-size:var(--fs-xs); color:var(--text-tertiary); align-self:center;">
+            🔒 Pide al administrador que te invite a esta empresa.
+          </span>
+        `}
       </div>
     </div>
   `;
@@ -87,10 +101,10 @@ function tarjetaEmpresa(e) {
 
 async function cargarEmpresas() {
   const cont = $('#lista-empresas');
-  const empresas = await obtenerEmpresasDelAgente(AGENTE.id);
+  const empresas = await listarTodasLasEmpresasConMembresia(AGENTE.id);
   cont.innerHTML = empresas.length
     ? empresas.map(tarjetaEmpresa).join('')
-    : `<div class="empty-state"><div class="empty-state__icon">🏢</div><h3>Sin empresas todavía</h3><p>Crea tu primera empresa para empezar.</p></div>`;
+    : `<div class="empty-state"><div class="empty-state__icon">🏢</div><h3>Sin empresas todavía</h3><p>Crea la primera empresa para empezar.</p></div>`;
 
   cont.querySelectorAll('[data-equipo]').forEach((btn) => btn.addEventListener('click', () => abrirEquipo(btn.dataset.equipo)));
   cont.querySelectorAll('[data-editar]').forEach((btn) => btn.addEventListener('click', () => abrirEdicion(btn.dataset.editar, btn.dataset.nombre, btn.dataset.descripcion)));

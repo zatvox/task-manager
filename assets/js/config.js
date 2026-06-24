@@ -12,6 +12,10 @@ export const CONFIG = {
   SUPABASE_URL: 'https://ishwabioqxdpbldcxpwc.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzaHdhYmlvcXhkcGJsZGN4cHdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjExMTQsImV4cCI6MjA5NDMzNzExNH0.TtzSkl4_O9rU69vckQhtpZOFtL_LxqdQX0DhBHddBDU',
 
+  // URL de producción (GitHub Pages). Los emails de confirmación siempre
+  // deben apuntar aquí, sin importar desde dónde se haga el registro.
+  APP_URL: 'https://zatvox.github.io/task-manager',
+
   APP_NAME: 'ZV Task Manager',
   APP_VERSION: '1.0.0',
 

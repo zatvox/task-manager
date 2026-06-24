@@ -5,13 +5,23 @@
  */
 import { supabase } from './supabase-client.js';
 import { CONFIG } from './config.js';
+
+// URL de login en producción — destino de los emails de confirmación y recovery.
+// Siempre apunta a GitHub Pages para que cualquier usuario (en cualquier red)
+// pueda hacer clic en el link y llegar al sistema real.
+const LOGIN_URL = `${CONFIG.APP_URL}/pages/login.html`;
 import { cacheLocal } from './utils.js';
 
 export async function registrarAgente({ email, password, nombre, telefono }) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { nombre, telefono } }
+    options: {
+      data: { nombre, telefono },
+      // Siempre redirigir a producción — así el link funciona para cualquier
+      // usuario desde cualquier dispositivo/red, no solo desde localhost.
+      emailRedirectTo: LOGIN_URL
+    }
   });
   if (error) throw error;
   return data;
@@ -38,7 +48,7 @@ export async function cerrarSesion() {
 
 export async function solicitarRecuperacionPassword(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + window.location.pathname.replace(/pages\/.*/, 'pages/login.html')
+    redirectTo: LOGIN_URL
   });
   if (error) throw error;
 }

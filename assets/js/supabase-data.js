@@ -33,6 +33,27 @@ export async function obtenerEmpresasDelAgente(agenteId) {
   return data?.map((r) => ({ ...r.empresa, rol: r.rol })) ?? [];
 }
 
+// Lista TODAS las empresas con estado de membresía del agente actual.
+// Requiere que la política RLS de SELECT en empresas sea pública para autenticados
+// (migración 003_empresas_visibles.sql).
+export async function listarTodasLasEmpresasConMembresia(agenteId) {
+  const [{ data: empresas, error }, { data: membresias }] = await Promise.all([
+    supabase.from('empresas').select('*').order('nombre'),
+    supabase.from('agentes_empresas').select('empresa_id, rol, estado').eq('agente_id', agenteId)
+  ]);
+  if (error) {
+    console.error('[supabase-data] listarTodasLasEmpresasConMembresia:', error.message);
+    return [];
+  }
+  const memMap = Object.fromEntries((membresias ?? []).map((m) => [m.empresa_id, m]));
+  return (empresas ?? []).map((e) => ({
+    ...e,
+    membresia: memMap[e.id] ?? null,
+    esMiembro: !!(memMap[e.id]?.estado === 'activo'),
+    rol: memMap[e.id]?.rol ?? null
+  }));
+}
+
 export async function obtenerEmpresa(empresaId) {
   const { data, error } = await supabase.from('empresas').select('*').eq('id', empresaId).single();
   manejarError('obtenerEmpresa', error);
