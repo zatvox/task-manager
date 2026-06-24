@@ -94,6 +94,16 @@ export async function eliminarEmpresa(id) {
   manejarError('eliminarEmpresa', error);
 }
 
+export async function unirsEaEmpresa(empresaId, agenteId) {
+  const { data, error } = await supabase
+    .from('agentes_empresas')
+    .insert({ agente_id: agenteId, empresa_id: empresaId, rol: 'empleado' })
+    .select()
+    .single();
+  manejarError('unirsEaEmpresa', error);
+  return data;
+}
+
 export async function invitarAgenteAEmpresa({ email, empresa_id, rol = 'empleado' }) {
   const { data: agente, error: errAgente } = await supabase.from('agentes').select('id').eq('email', email).maybeSingle();
   manejarError('invitarAgenteAEmpresa:buscarAgente', errAgente);
@@ -151,14 +161,22 @@ export async function listarDepartamentos(empresaId) {
 }
 
 export async function crearDepartamento({ empresa_id, nombre, descripcion, manager_id }) {
-  const { data, error } = await supabase.from('departamentos').insert({ empresa_id, nombre, descripcion, manager_id }).select().single();
+  // UUID client-side: evita que RETURNING * evalúe SELECT RLS antes de que
+  // el agente sea miembro (mismo patrón que crearEmpresa).
+  const deptId = crypto.randomUUID();
+  const { error } = await supabase.from('departamentos').insert({ id: deptId, empresa_id, nombre, descripcion, manager_id });
   manejarError('crearDepartamento', error);
+  const { data, error: errSel } = await supabase.from('departamentos').select('*, manager:agentes(id, nombre, foto_url)').eq('id', deptId).single();
+  manejarError('crearDepartamento:select', errSel);
   return data;
 }
 
 export async function actualizarDepartamento(id, cambios) {
-  const { data, error } = await supabase.from('departamentos').update(cambios).eq('id', id).select().single();
+  // Split UPDATE + SELECT para evitar 406 por RETURNING RLS.
+  const { error } = await supabase.from('departamentos').update(cambios).eq('id', id);
   manejarError('actualizarDepartamento', error);
+  const { data, error: errSel } = await supabase.from('departamentos').select('*, manager:agentes(id, nombre, foto_url)').eq('id', id).single();
+  manejarError('actualizarDepartamento:select', errSel);
   return data;
 }
 
@@ -168,9 +186,8 @@ export async function eliminarDepartamento(id) {
 }
 
 export async function agregarAgenteADepartamento(agente_id, departamento_id) {
-  const { data, error } = await supabase.from('agentes_departamentos').insert({ agente_id, departamento_id }).select().single();
+  const { error } = await supabase.from('agentes_departamentos').insert({ agente_id, departamento_id });
   manejarError('agregarAgenteADepartamento', error);
-  return data;
 }
 
 export async function listarAgentesDeDepartamento(departamentoId) {
