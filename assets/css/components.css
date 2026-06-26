@@ -168,7 +168,7 @@ table.data-table tr.row-vencida td { color: var(--color-danger); }
 }
 .side-panel-overlay.open { display: block; }
 .side-panel {
-  position: fixed; top: 0; right: 0; height: 100vh; width: var(--panel-width); min-width: 360px;
+  position: fixed; top: 0; right: 0; height: 100vh; width: var(--panel-width); min-width: 280px;
   background: var(--bg-surface); border-left: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-lg); transform: translateX(100%);
   transition: transform var(--transition-slow); z-index: var(--z-modal);
@@ -232,6 +232,141 @@ table.data-table tr.row-vencida td { color: var(--color-danger); }
 .dropdown__menu.open { display: block; }
 .dropdown__item { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--fs-sm); color: var(--text-secondary); }
 .dropdown__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+
+/* --- Calendario --- */
+.calendar-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-4);
+}
+.calendar-nav { display: flex; align-items: center; gap: var(--space-2); }
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.dow {
+  background: var(--bg-surface-raised);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-xs); font-weight: 700;
+  text-transform: uppercase; color: var(--text-tertiary);
+  text-align: center;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+}
+.dow:last-child { border-right: none; }
+
+.calendar-day {
+  height: 110px;          /* Altura fija: evita que los chips expandan la fila */
+  overflow: hidden;
+  padding: var(--space-1) var(--space-2);
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: 2px;
+  cursor: default;
+  transition: background var(--transition-fast);
+}
+/* Quitar borde derecho de la última columna (7.ª posición relativa) */
+.calendar-day:nth-child(7n) { border-right: none; }
+.calendar-day:hover { background: var(--bg-surface-raised); }
+.calendar-day.hoy { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.calendar-day.otro-mes { opacity: 0.38; }
+.calendar-day.drag-over { background: var(--color-accent-soft); border-color: var(--color-accent); }
+
+.calendar-day__num {
+  font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+  flex-shrink: 0; line-height: 1.2; margin-bottom: 1px;
+}
+.calendar-day.hoy .calendar-day__num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--color-accent); color: #000; font-weight: 700;
+}
+
+/* Chip de evento en la cuadrícula mensual */
+.evento-chip {
+  font-size: 11px;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-accent);
+  background: var(--bg-surface-raised);
+  white-space: nowrap;      /* No wrap — trunca en vez de expandir */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  cursor: pointer;
+  line-height: 1.6;
+  display: block;
+}
+.evento-chip:hover { background: var(--bg-surface-hover); }
+.evento-chip.vencida { opacity: 0.55; text-decoration: line-through; }
+.evento-chip.dragging { opacity: 0.25; }
+
+/* Vista semanal */
+.semana-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-3); overflow-x: auto;
+}
+.dia-columna {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-3);
+  min-height: 200px; min-width: 120px;
+}
+
+/* Vista diaria */
+.hora-fila {
+  display: grid; grid-template-columns: 52px 1fr;
+  border-bottom: 1px solid var(--border-subtle); min-height: 40px;
+}
+.hora-label {
+  font-size: 11px; color: var(--text-tertiary); padding: var(--space-1) var(--space-2);
+  display: flex; align-items: flex-start; padding-top: 6px;
+}
+
+/* --- MultiSelect (filtro de opción múltiple) --- */
+.multiselect { position: relative; display: inline-block; }
+.multiselect__btn {
+  display: flex; align-items: center; gap: var(--space-2);
+  white-space: nowrap;
+}
+.multiselect__menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  min-width: 220px; max-height: 280px; overflow-y: auto;
+  display: none; z-index: var(--z-dropdown);
+  padding: var(--space-2);
+}
+.multiselect__menu.open { display: block; }
+.multiselect__header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle); margin-bottom: var(--space-1);
+}
+.multiselect__clear {
+  font-size: var(--fs-xs); color: var(--color-accent);
+  cursor: pointer; background: none; border: none; padding: 0;
+}
+.multiselect__clear:hover { text-decoration: underline; }
+.multiselect__item {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); color: var(--text-secondary);
+  cursor: pointer; user-select: none;
+}
+.multiselect__item:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.multiselect__item input[type="checkbox"] { cursor: pointer; accent-color: var(--color-accent); }
+.multiselect__empty {
+  padding: var(--space-3) var(--space-3); font-size: var(--fs-xs);
+  color: var(--text-tertiary); text-align: center;
+}
 
 /* --- Notification bell badge --- */
 .bell-badge { position: relative; }

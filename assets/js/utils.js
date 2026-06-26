@@ -150,3 +150,124 @@ export const ETIQUETAS_PRIORIDAD = {
   normal: 'Normal',
   baja: 'Baja'
 };
+
+/**
+ * Crea un dropdown de selección múltiple reutilizable.
+ *
+ * @param {object} config
+ * @param {string}   config.placeholder  Texto del botón cuando no hay selección
+ * @param {Array}    config.options       [{value, label}] opciones iniciales
+ * @param {Function} config.onChange      Callback(selectedValues: string[]) al cambiar selección
+ *
+ * @returns {{ el: HTMLElement, getSelected(): string[], setOptions(opts): void, clear(): void }}
+ */
+export function crearMultiSelect({ placeholder = 'Seleccionar', options = [], onChange } = {}) {
+  const selected = new Set();
+
+  /* ── Estructura DOM ── */
+  const wrap = document.createElement('div');
+  wrap.className = 'multiselect';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-secondary btn-sm multiselect__btn';
+
+  const menu = document.createElement('div');
+  menu.className = 'multiselect__menu';
+
+  wrap.append(btn, menu);
+
+  /* ── Helpers ── */
+  function updateBtn() {
+    btn.textContent = selected.size
+      ? `${placeholder} (${selected.size}) ▾`
+      : `${placeholder} ▾`;
+  }
+
+  function buildMenu(opts) {
+    menu.innerHTML = '';
+
+    if (opts.length) {
+      const hdr = document.createElement('div');
+      hdr.className = 'multiselect__header';
+      const title = document.createElement('span');
+      title.style.cssText = 'font-size:var(--fs-xs); color:var(--text-tertiary); font-weight:600;';
+      title.textContent = placeholder.toUpperCase();
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'multiselect__clear';
+      clearBtn.type = 'button';
+      clearBtn.textContent = 'Limpiar';
+      clearBtn.addEventListener('click', (e) => { e.stopPropagation(); clearAll(); });
+      hdr.append(title, clearBtn);
+      menu.appendChild(hdr);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'multiselect__empty';
+      empty.textContent = 'Sin opciones disponibles';
+      menu.appendChild(empty);
+      return;
+    }
+
+    opts.forEach(({ value, label }) => {
+      const item = document.createElement('label');
+      item.className = 'multiselect__item';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = value;
+      chk.checked = selected.has(value);
+      chk.addEventListener('change', () => {
+        chk.checked ? selected.add(value) : selected.delete(value);
+        updateBtn();
+        onChange?.([...selected]);
+      });
+
+      const lbl = document.createElement('span');
+      lbl.textContent = label;
+
+      item.append(chk, lbl);
+      menu.appendChild(item);
+    });
+  }
+
+  function clearAll() {
+    selected.clear();
+    updateBtn();
+    buildMenu(currentOptions);
+    onChange?.([]);
+  }
+
+  let currentOptions = options;
+
+  /* ── Toggle menu ── */
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Cierra otros multiselects abiertos
+    document.querySelectorAll('.multiselect__menu.open').forEach((m) => {
+      if (m !== menu) m.classList.remove('open');
+    });
+    menu.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => menu.classList.remove('open'));
+
+  /* ── Init ── */
+  updateBtn();
+  buildMenu(options);
+
+  return {
+    el: wrap,
+    getSelected: () => [...selected],
+    setOptions(opts) {
+      currentOptions = opts;
+      // Mantener selección válida
+      for (const v of selected) {
+        if (!opts.find((o) => o.value === v)) selected.delete(v);
+      }
+      updateBtn();
+      buildMenu(opts);
+      onChange?.([...selected]);
+    },
+    clear: clearAll
+  };
+}

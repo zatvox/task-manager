@@ -2,15 +2,28 @@ import { renderLayout } from './layout.js';
 import { inicializarApp, toastExito, toastError, abrirModal, cerrarModal, confirmar } from './main.js';
 import {
   obtenerTareas, crearTarea, actualizarTarea, eliminarTarea, cambiarEstadoTarea,
-  listarProyectos, listarAgentesDeEmpresa
+  listarProyectos, listarAgentesDeEmpresa, obtenerEmpresasDelAgente, listarTodosLosProyectos
 } from './supabase-data.js';
-import { $, $$, qs, escapeHTML, formatearFecha, esVencida, ETIQUETAS_ESTADO, ETIQUETAS_PRIORIDAD, iniciales, debounce } from './utils.js';
+import {
+  $, $$, qs, escapeHTML, formatearFecha, esVencida,
+  ETIQUETAS_ESTADO, ETIQUETAS_PRIORIDAD, iniciales, debounce, crearMultiSelect
+} from './utils.js';
 
-let EMPRESA_ID, AGENTE, PROYECTOS = [], AGENTES_EMPRESA = [];
+let EMPRESA_ID, AGENTE;
+let EMPRESAS      = [];   // Todas las empresas del usuario
+let TODOS_PROYECTOS = []; // Proyectos de todas las empresas
+let AGENTES_EMPRESA = []; // Agentes de la empresa activa en el modal
+
 let VISTA = 'tabla';
 let PAGINA = 0;
 const ESTADOS = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
 
+// Multiselect instances (toolbar)
+let msEmpresas, msProyectos, msEstados, msPrioridades;
+
+/* ============================================================
+   PLANTILLA
+   ============================================================ */
 function plantilla() {
   return `
     <div class="page-header">
@@ -18,11 +31,12 @@ function plantilla() {
       <button class="btn btn-primary" id="btn-nueva">+ Nueva tarea</button>
     </div>
 
-    <div class="table-toolbar">
-      <input class="form-control" id="filtro-busqueda" placeholder="Buscar por título…" style="min-width:220px;" />
-      <select class="form-control" id="filtro-proyecto"><option value="">Todos los proyectos</option></select>
-      <select class="form-control" id="filtro-estado"><option value="">Todos los estados</option>${ESTADOS.map((e) => `<option value="${e}">${ETIQUETAS_ESTADO[e]}</option>`).join('')}</select>
-      <select class="form-control" id="filtro-prioridad"><option value="">Toda prioridad</option>${Object.entries(ETIQUETAS_PRIORIDAD).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+    <div class="table-toolbar" style="flex-wrap:wrap; gap:var(--space-2);">
+      <input class="form-control" id="filtro-busqueda" placeholder="Buscar por título…" style="min-width:200px; flex:1;" />
+      <div id="slot-ms-empresas"></div>
+      <div id="slot-ms-proyectos"></div>
+      <div id="slot-ms-estados"></div>
+      <div id="slot-ms-prioridades"></div>
       <div class="tabs" style="border-bottom:none; margin:0;">
         <div class="tab ${VISTA === 'tabla' ? 'active' : ''}" data-vista="tabla">📋 Tabla</div>
         <div class="tab ${VISTA === 'kanban' ? 'active' : ''}" data-vista="kanban">🗂️ Kanban</div>
@@ -32,35 +46,74 @@ function plantilla() {
     <div id="vista-contenedor"><div class="loading-spinner"></div></div>
     <div class="pagination" id="paginacion" style="display:none;"></div>
 
-    <!-- Modal crear/editar tarea -->
+    <!-- Modal crear / editar tarea -->
     <div class="modal-overlay" id="modal-tarea">
       <div class="modal modal--lg">
-        <div class="modal__header"><h3 id="modal-tarea-titulo">Nueva tarea</h3><button class="btn-icon" data-close>✕</button></div>
+        <div class="modal__header">
+          <h3 id="modal-tarea-titulo">Nueva tarea</h3>
+          <button class="btn-icon" data-close>✕</button>
+        </div>
         <form id="form-tarea">
           <div class="modal__body">
             <input type="hidden" id="tarea-id" />
-            <div class="form-group"><label class="form-label">Título</label><input class="form-control" id="tarea-titulo" required /></div>
-            <div class="form-group"><label class="form-label">Descripción</label><textarea class="form-control" id="tarea-descripcion"></textarea></div>
+
+            <!-- Selector de empresa -->
+            <div class="form-group">
+              <label class="form-label">Empresa</label>
+              <select class="form-control" id="tarea-empresa"></select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Título</label>
+              <input class="form-control" id="tarea-titulo" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Descripción</label>
+              <textarea class="form-control" id="tarea-descripcion"></textarea>
+            </div>
+
             <div class="form-row">
-              <div class="form-group"><label class="form-label">Proyecto</label><select class="form-control" id="tarea-proyecto"><option value="">Sin proyecto</option></select></div>
-              <div class="form-group"><label class="form-label">Prioridad</label>
-                <select class="form-control" id="tarea-prioridad">${Object.entries(ETIQUETAS_PRIORIDAD).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+              <div class="form-group">
+                <label class="form-label">Proyecto</label>
+                <select class="form-control" id="tarea-proyecto">
+                  <option value="">Sin proyecto</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Prioridad</label>
+                <select class="form-control" id="tarea-prioridad">
+                  ${Object.entries(ETIQUETAS_PRIORIDAD).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+                </select>
               </div>
             </div>
-            <div class="form-group checkbox-row"><input type="checkbox" id="tarea-cronologica" /><label for="tarea-cronologica">Es recordatorio cronológico (sin fecha de cierre fija)</label></div>
+
+            <div class="form-group checkbox-row">
+              <input type="checkbox" id="tarea-cronologica" />
+              <label for="tarea-cronologica">Es recordatorio cronológico (sin fecha de cierre fija)</label>
+            </div>
 
             <div id="campos-puntual" class="form-row">
-              <div class="form-group"><label class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="tarea-fecha-inicio" /></div>
-              <div class="form-group"><label class="form-label">Fecha de cierre</label><input class="form-control" type="date" id="tarea-fecha-cierre" /></div>
+              <div class="form-group">
+                <label class="form-label">Fecha de inicio</label>
+                <input class="form-control" type="date" id="tarea-fecha-inicio" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fecha de cierre</label>
+                <input class="form-control" type="date" id="tarea-fecha-cierre" />
+              </div>
             </div>
 
             <div id="campos-cronologica" style="display:none;">
-              <div class="form-group"><label class="form-label">Frecuencia</label>
+              <div class="form-group">
+                <label class="form-label">Frecuencia</label>
                 <select class="form-control" id="tarea-frecuencia">
-                  <option value="diaria">Diaria</option><option value="semanal">Semanal</option><option value="mensual">Mensual</option>
+                  <option value="diaria">Diaria</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="mensual">Mensual</option>
                 </select>
               </div>
-              <div class="form-group" id="grupo-dias-semana"><label class="form-label">Días de la semana</label>
+              <div class="form-group" id="grupo-dias-semana">
+                <label class="form-label">Días de la semana</label>
                 <div style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
                   ${['lunes','martes','miercoles','jueves','viernes','sabado','domingo'].map((d) => `
                     <label class="checkbox-row" style="background:var(--bg-surface-raised); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm);">
@@ -68,18 +121,32 @@ function plantilla() {
                     </label>`).join('')}
                 </div>
               </div>
-              <div class="form-group" id="grupo-dia-mes" style="display:none;"><label class="form-label">Día del mes</label><input class="form-control" type="number" min="1" max="31" id="tarea-dia-mes" /></div>
+              <div class="form-group" id="grupo-dia-mes" style="display:none;">
+                <label class="form-label">Día del mes</label>
+                <input class="form-control" type="number" min="1" max="31" id="tarea-dia-mes" />
+              </div>
             </div>
 
             <div class="form-row">
-              <div class="form-group"><label class="form-label">Tiempo estimado (horas)</label><input class="form-control" type="number" min="0" id="tarea-tiempo-estimado" /></div>
-              <div class="form-group"><label class="form-label">Etiquetas (separadas por coma)</label><input class="form-control" id="tarea-etiquetas" placeholder="urgente, cliente-x" /></div>
+              <div class="form-group">
+                <label class="form-label">Tiempo estimado (horas)</label>
+                <input class="form-control" type="number" min="0" id="tarea-tiempo-estimado" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Etiquetas (separadas por coma)</label>
+                <input class="form-control" id="tarea-etiquetas" placeholder="urgente, cliente-x" />
+              </div>
             </div>
-            <div class="form-group"><label class="form-label">Asignar agentes</label>
+
+            <div class="form-group">
+              <label class="form-label">Asignar agentes</label>
               <div id="lista-asignar-agentes" style="display:flex; flex-wrap:wrap; gap:var(--space-2);"></div>
             </div>
           </div>
-          <div class="modal__footer"><button type="button" class="btn btn-secondary" data-close>Cancelar</button><button type="submit" class="btn btn-primary">Guardar tarea</button></div>
+          <div class="modal__footer">
+            <button type="button" class="btn btn-secondary" data-close>Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar tarea</button>
+          </div>
         </form>
       </div>
     </div>
@@ -93,48 +160,86 @@ function plantilla() {
       </div>
       <div class="side-panel__body" id="panel-body"></div>
       <div class="side-panel__footer">
-        <a class="btn btn-secondary" id="btn-editar-completo">Editar tarea completa</a>
+        <a class="btn btn-secondary" id="btn-editar-completo">Editar tarea</a>
         <button class="btn btn-danger" id="btn-eliminar-tarea">Eliminar</button>
       </div>
     </aside>
   `;
 }
 
+/* ============================================================
+   HELPERS UI
+   ============================================================ */
 function badgeEstado(t) {
   const vencida = esVencida(t.fecha_cierre, t.estado);
   return `<span class="badge badge-estado-${t.estado}" ${vencida ? 'style="color:var(--color-danger)"' : ''}>${ETIQUETAS_ESTADO[t.estado]}</span>`;
 }
 
 function avataresAsignados(asignados = []) {
-  return `<div class="avatar-group">${asignados.slice(0, 3).map((a) => `<div class="avatar" title="${escapeHTML(a.agente?.nombre || '')}">${iniciales(a.agente?.nombre || '?')}</div>`).join('')}</div>`;
+  return `<div class="avatar-group">${asignados.slice(0, 3).map((a) =>
+    `<div class="avatar" title="${escapeHTML(a.agente?.nombre || '')}">${iniciales(a.agente?.nombre || '?')}</div>`
+  ).join('')}</div>`;
 }
 
-async function cargarFiltros() {
-  PROYECTOS = await listarProyectos(EMPRESA_ID);
-  AGENTES_EMPRESA = await listarAgentesDeEmpresa(EMPRESA_ID);
-  const opciones = PROYECTOS.map((p) => `<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join('');
-  $('#filtro-proyecto').innerHTML = '<option value="">Todos los proyectos</option>' + opciones;
-  $('#tarea-proyecto').innerHTML = '<option value="">Sin proyecto</option>' + opciones;
+/* ============================================================
+   FILTROS (toolbar)
+   ============================================================ */
+function filtrosActuales() {
+  return {
+    empresa_ids:  msEmpresas?.getSelected()  ?? [],
+    proyecto_ids: msProyectos?.getSelected() ?? [],
+    estados:      msEstados?.getSelected()   ?? [],
+    prioridades:  msPrioridades?.getSelected() ?? [],
+    busqueda:     $('#filtro-busqueda')?.value.trim() || undefined
+  };
+}
 
-  const proyectoQS = qs('proyecto');
-  if (proyectoQS) $('#filtro-proyecto').value = proyectoQS;
+/* ── Popula multiselect de proyectos según empresas seleccionadas ── */
+function actualizarMsProyectos() {
+  const empresasSeleccionadas = msEmpresas.getSelected();
+  const proyectosFiltrados = empresasSeleccionadas.length
+    ? TODOS_PROYECTOS.filter((p) => empresasSeleccionadas.includes(p.empresa_id))
+    : TODOS_PROYECTOS;
 
-  $('#lista-asignar-agentes').innerHTML = AGENTES_EMPRESA.map((a) => `
+  msProyectos.setOptions(
+    proyectosFiltrados.map((p) => ({
+      value: p.id,
+      label: empresasSeleccionadas.length !== 1
+        ? `${escapeHTML(p.nombre)} (${escapeHTML(p.empresa?.nombre || '')})`
+        : escapeHTML(p.nombre)
+    }))
+  );
+}
+
+/* ============================================================
+   CARGA DE DATOS PARA EL MODAL
+   ============================================================ */
+async function cargarDatosModalEmpresa(empresaId) {
+  const [proyectos, agentes] = await Promise.all([
+    listarProyectos(empresaId),
+    listarAgentesDeEmpresa(empresaId)
+  ]);
+  AGENTES_EMPRESA = agentes;
+
+  $('#tarea-proyecto').innerHTML =
+    '<option value="">Sin proyecto</option>' +
+    proyectos.map((p) => `<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join('');
+
+  $('#lista-asignar-agentes').innerHTML = agentes.map((a) => `
     <label class="checkbox-row" style="background:var(--bg-surface-raised); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm);">
       <input type="checkbox" value="${a.agente.id}" class="agente-check" /> ${escapeHTML(a.agente.nombre)}
     </label>`).join('');
 }
 
-function filtrosActuales() {
-  return {
-    empresa_id: EMPRESA_ID,
-    busqueda: $('#filtro-busqueda').value.trim() || undefined,
-    proyecto_id: $('#filtro-proyecto').value || undefined,
-    estado: $('#filtro-estado').value || undefined,
-    prioridad: $('#filtro-prioridad').value || undefined
-  };
+function llenarSelectorEmpresaModal(selectedId) {
+  $('#tarea-empresa').innerHTML = EMPRESAS.map((e) =>
+    `<option value="${e.id}" ${e.id === selectedId ? 'selected' : ''}>${escapeHTML(e.nombre)}</option>`
+  ).join('');
 }
 
+/* ============================================================
+   VISTA TABLA / KANBAN
+   ============================================================ */
 async function cargarVista() {
   const cont = $('#vista-contenedor');
   cont.innerHTML = '<div class="loading-spinner"></div>';
@@ -144,25 +249,35 @@ async function cargarVista() {
     cont.innerHTML = `
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Título</th><th>Proyecto</th><th>Estado</th><th>Prioridad</th><th>Asignados</th><th>Cierre</th></tr></thead>
+          <thead>
+            <tr><th>Título</th><th>Empresa / Proyecto</th><th>Estado</th><th>Prioridad</th><th>Asignados</th><th>Cierre</th></tr>
+          </thead>
           <tbody>${data.length ? data.map((t) => `
             <tr class="${esVencida(t.fecha_cierre, t.estado) ? 'row-vencida' : ''}" data-abrir="${t.id}" style="cursor:pointer;">
               <td>${escapeHTML(t.titulo)} ${t.es_cronologica ? '🔁' : ''}</td>
-              <td>${t.proyecto ? `<span style="color:${t.proyecto.color_etiqueta}">●</span> ${escapeHTML(t.proyecto.nombre)}` : '—'}</td>
+              <td>
+                ${t.proyecto ? `<div style="font-size:var(--fs-xs); color:var(--text-tertiary);">${escapeHTML(t.proyecto.empresa?.nombre || '')}</div><div><span style="color:${t.proyecto.color_etiqueta}">●</span> ${escapeHTML(t.proyecto.nombre)}</div>` : '—'}
+              </td>
               <td>${badgeEstado(t)}</td>
               <td><span class="badge badge-prioridad-${t.prioridad}">${ETIQUETAS_PRIORIDAD[t.prioridad]}</span></td>
               <td>${avataresAsignados(t.asignados)}</td>
               <td>${t.fecha_cierre ? formatearFecha(t.fecha_cierre) : '—'}</td>
-            </tr>`).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:var(--space-6);">Sin tareas que coincidan con los filtros.</td></tr>'}</tbody>
+            </tr>`).join('') :
+            '<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:var(--space-6);">Sin tareas que coincidan con los filtros.</td></tr>'}
+          </tbody>
         </table>
       </div>`;
-    cont.querySelectorAll('[data-abrir]').forEach((tr) => tr.addEventListener('click', () => abrirPanelTarea(tr.dataset.abrir)));
+    cont.querySelectorAll('[data-abrir]').forEach((tr) =>
+      tr.addEventListener('click', () => abrirPanelTarea(tr.dataset.abrir)));
     renderPaginacion(total);
   } else {
     const { data: todas } = await obtenerTareas(filtrosActuales(), 0, 200);
     cont.innerHTML = `<div class="kanban">${ESTADOS.map((estado) => `
       <div class="kanban-column" data-estado="${estado}">
-        <div class="kanban-column__title"><span>${ETIQUETAS_ESTADO[estado]}</span><span class="badge badge-estado-${estado}">${todas.filter((t) => t.estado === estado).length}</span></div>
+        <div class="kanban-column__title">
+          <span>${ETIQUETAS_ESTADO[estado]}</span>
+          <span class="badge badge-estado-${estado}">${todas.filter((t) => t.estado === estado).length}</span>
+        </div>
         <div class="kanban-cards" data-drop="${estado}">
           ${todas.filter((t) => t.estado === estado).map((t) => `
             <div class="kanban-card" draggable="true" data-id="${t.id}" data-abrir="${t.id}">
@@ -175,7 +290,8 @@ async function cargarVista() {
         </div>
       </div>`).join('')}</div>`;
 
-    cont.querySelectorAll('[data-abrir]').forEach((c) => c.addEventListener('click', (e) => { if (!c.classList.contains('dragging')) abrirPanelTarea(c.dataset.abrir); }));
+    cont.querySelectorAll('[data-abrir]').forEach((c) =>
+      c.addEventListener('click', (e) => { if (!c.classList.contains('dragging')) abrirPanelTarea(c.dataset.abrir); }));
     inicializarDragDropKanban();
     $('#paginacion').style.display = 'none';
   }
@@ -218,7 +334,9 @@ function renderPaginacion(total) {
   $('#btn-next')?.addEventListener('click', () => { PAGINA++; cargarVista(); });
 }
 
-/* --- Panel lateral de detalle --- */
+/* ============================================================
+   PANEL LATERAL DE DETALLE
+   ============================================================ */
 async function abrirPanelTarea(id) {
   const { obtenerTarea, listarComentarios, crearComentario, listarHistorialTarea } = await import('./supabase-data.js');
   const tarea = await obtenerTarea(id);
@@ -232,10 +350,16 @@ async function abrirPanelTarea(id) {
   const { data: historial } = await listarHistorialTarea(id, 0, 10);
 
   $('#panel-body').innerHTML = `
-    <div class="form-group"><label class="form-label">Estado</label>
-      <select class="form-control" id="panel-estado">${ESTADOS.map((e) => `<option value="${e}" ${e === tarea.estado ? 'selected' : ''}>${ETIQUETAS_ESTADO[e]}</option>`).join('')}</select>
+    <div class="form-group">
+      <label class="form-label">Estado</label>
+      <select class="form-control" id="panel-estado">
+        ${ESTADOS.map((e) => `<option value="${e}" ${e === tarea.estado ? 'selected' : ''}>${ETIQUETAS_ESTADO[e]}</option>`).join('')}
+      </select>
     </div>
-    <p><span class="badge badge-prioridad-${tarea.prioridad}">${ETIQUETAS_PRIORIDAD[tarea.prioridad]}</span> ${tarea.es_cronologica ? '<span class="badge badge-estado-en_progreso">🔁 Cronológica</span>' : ''}</p>
+    <p>
+      <span class="badge badge-prioridad-${tarea.prioridad}">${ETIQUETAS_PRIORIDAD[tarea.prioridad]}</span>
+      ${tarea.es_cronologica ? '<span class="badge badge-estado-en_progreso">🔁 Cronológica</span>' : ''}
+    </p>
     <p style="font-size:var(--fs-sm); color:var(--text-secondary); margin:var(--space-3) 0;">${escapeHTML(tarea.descripcion || 'Sin descripción.')}</p>
     <p style="font-size:var(--fs-xs); color:var(--text-tertiary);">Inicio: ${formatearFecha(tarea.fecha_inicio)} ${tarea.fecha_cierre ? '· Cierre: ' + formatearFecha(tarea.fecha_cierre) : ''}</p>
     <div style="margin:var(--space-3) 0;"><strong style="font-size:var(--fs-sm);">Asignados:</strong> ${avataresAsignados(tarea.asignados)}</div>
@@ -246,7 +370,10 @@ async function abrirPanelTarea(id) {
       ${comentarios.length ? comentarios.map((c) => `
         <div style="display:flex; gap:var(--space-2); margin-bottom:var(--space-3);">
           <div class="avatar">${iniciales(c.agente?.nombre || '?')}</div>
-          <div><div style="font-size:var(--fs-xs); font-weight:600;">${escapeHTML(c.agente?.nombre || '')}</div><div style="font-size:var(--fs-sm);">${escapeHTML(c.texto)}</div></div>
+          <div>
+            <div style="font-size:var(--fs-xs); font-weight:600;">${escapeHTML(c.agente?.nombre || '')}</div>
+            <div style="font-size:var(--fs-sm);">${escapeHTML(c.texto)}</div>
+          </div>
         </div>`).join('') : '<p style="color:var(--text-tertiary); font-size:var(--fs-sm);">Sin comentarios.</p>'}
     </div>
     <form id="form-comentario" style="display:flex; gap:var(--space-2);">
@@ -256,7 +383,10 @@ async function abrirPanelTarea(id) {
 
     <h4 style="margin-top:var(--space-5);">Historial</h4>
     <div style="font-size:var(--fs-xs); color:var(--text-tertiary);">
-      ${historial.length ? historial.map((h) => `<div style="padding:var(--space-2) 0; border-bottom:1px solid var(--border-subtle);">${escapeHTML(h.campo_modificado)}: ${escapeHTML(h.valor_antiguo || '—')} → ${escapeHTML(h.valor_nuevo || '—')}</div>`).join('') : 'Sin cambios registrados.'}
+      ${historial.length ? historial.map((h) => `
+        <div style="padding:var(--space-2) 0; border-bottom:1px solid var(--border-subtle);">
+          ${escapeHTML(h.campo_modificado)}: ${escapeHTML(h.valor_antiguo || '—')} → ${escapeHTML(h.valor_nuevo || '—')}
+        </div>`).join('') : 'Sin cambios registrados.'}
     </div>
   `;
 
@@ -264,13 +394,15 @@ async function abrirPanelTarea(id) {
     try { await cambiarEstadoTarea(id, e.target.value, AGENTE.id); toastExito('Estado actualizado.'); cargarVista(); }
     catch (err) { toastError(err.message); }
   });
-
   $('#form-comentario').addEventListener('submit', async (e) => {
     e.preventDefault();
     const texto = $('#input-comentario').value.trim();
     if (!texto) return;
-    try { await crearComentario({ tarea_id: id, agente_id: AGENTE.id, texto }); $('#input-comentario').value = ''; abrirPanelTarea(id); }
-    catch (err) { toastError(err.message); }
+    try {
+      await crearComentario({ tarea_id: id, agente_id: AGENTE.id, texto });
+      $('#input-comentario').value = '';
+      abrirPanelTarea(id);
+    } catch (err) { toastError(err.message); }
   });
 
   $('#panel-tarea').classList.add('open');
@@ -282,17 +414,19 @@ function cerrarPanel() {
   $('#panel-overlay').classList.remove('open');
 }
 
-/* --- Modal crear/editar --- */
+/* ============================================================
+   MODAL CREAR / EDITAR
+   ============================================================ */
 function toggleCamposCronologicos() {
-  const esCronologica = $('#tarea-cronologica').checked;
-  $('#campos-puntual').style.display = esCronologica ? 'none' : 'grid';
-  $('#campos-cronologica').style.display = esCronologica ? 'block' : 'none';
+  const es = $('#tarea-cronologica').checked;
+  $('#campos-puntual').style.display = es ? 'none' : 'grid';
+  $('#campos-cronologica').style.display = es ? 'block' : 'none';
 }
 
 function toggleFrecuencia() {
-  const frecuencia = $('#tarea-frecuencia').value;
-  $('#grupo-dias-semana').style.display = frecuencia === 'semanal' ? 'block' : 'none';
-  $('#grupo-dia-mes').style.display = frecuencia === 'mensual' ? 'block' : 'none';
+  const f = $('#tarea-frecuencia').value;
+  $('#grupo-dias-semana').style.display = f === 'semanal' ? 'block' : 'none';
+  $('#grupo-dia-mes').style.display     = f === 'mensual'  ? 'block' : 'none';
 }
 
 function resetFormulario() {
@@ -303,19 +437,23 @@ function resetFormulario() {
   toggleFrecuencia();
 }
 
+/* ============================================================
+   BIND
+   ============================================================ */
 function bind() {
+  // Búsqueda con debounce
   $('#filtro-busqueda').addEventListener('input', debounce(() => { PAGINA = 0; cargarVista(); }, 350));
-  $('#filtro-proyecto').addEventListener('change', () => { PAGINA = 0; cargarVista(); });
-  $('#filtro-estado').addEventListener('change', () => { PAGINA = 0; cargarVista(); });
-  $('#filtro-prioridad').addEventListener('change', () => { PAGINA = 0; cargarVista(); });
 
-  $$('.tab[data-vista]').forEach((tab) => tab.addEventListener('click', () => {
-    VISTA = tab.dataset.vista;
-    $$('.tab[data-vista]').forEach((t) => t.classList.toggle('active', t === tab));
-    PAGINA = 0;
-    cargarVista();
-  }));
+  // Tabs de vista
+  $$('.tab[data-vista]').forEach((tab) =>
+    tab.addEventListener('click', () => {
+      VISTA = tab.dataset.vista;
+      $$('.tab[data-vista]').forEach((t) => t.classList.toggle('active', t === tab));
+      PAGINA = 0;
+      cargarVista();
+    }));
 
+  // Panel lateral
   $('#btn-cerrar-panel').addEventListener('click', cerrarPanel);
   $('#panel-overlay').addEventListener('click', cerrarPanel);
 
@@ -327,44 +465,54 @@ function bind() {
     catch (err) { toastError(err.message); }
   });
 
-  $('#btn-nueva').addEventListener('click', () => {
-    $('#modal-tarea-titulo').textContent = 'Nueva tarea';
-    resetFormulario();
-    abrirModal('modal-tarea');
-  });
-
+  // Modal
   $$('[data-close]').forEach((b) => b.addEventListener('click', () => cerrarModal('modal-tarea')));
   $('#tarea-cronologica').addEventListener('change', toggleCamposCronologicos);
   $('#tarea-frecuencia').addEventListener('change', toggleFrecuencia);
 
+  // Cambio de empresa en modal → recargar proyectos y agentes
+  $('#tarea-empresa').addEventListener('change', async (e) => {
+    await cargarDatosModalEmpresa(e.target.value);
+  });
+
+  $('#btn-nueva').addEventListener('click', () => {
+    $('#modal-tarea-titulo').textContent = 'Nueva tarea';
+    llenarSelectorEmpresaModal(EMPRESA_ID);
+    $('#tarea-empresa').disabled = false;
+    resetFormulario();
+    cargarDatosModalEmpresa(EMPRESA_ID);
+    abrirModal('modal-tarea');
+  });
+
   $('#form-tarea').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const id = $('#tarea-id').value;
-    const esCronologica = $('#tarea-cronologica').checked;
-    const agentesIds = $$('.agente-check:checked').map((c) => c.value);
-    const etiquetas = $('#tarea-etiquetas').value.split(',').map((s) => s.trim()).filter(Boolean);
+    const id              = $('#tarea-id').value;
+    const empresaId       = $('#tarea-empresa').value || EMPRESA_ID;
+    const esCronologica   = $('#tarea-cronologica').checked;
+    const agentesIds      = $$('.agente-check:checked').map((c) => c.value);
+    const etiquetas       = $('#tarea-etiquetas').value.split(',').map((s) => s.trim()).filter(Boolean);
 
     const datos = {
-      empresa_id: EMPRESA_ID,
-      proyecto_id: $('#tarea-proyecto').value || null,
-      titulo: $('#tarea-titulo').value.trim(),
-      descripcion: $('#tarea-descripcion').value.trim(),
-      prioridad: $('#tarea-prioridad').value,
-      es_cronologica: esCronologica,
+      empresa_id:              empresaId,
+      proyecto_id:             $('#tarea-proyecto').value || null,
+      titulo:                  $('#tarea-titulo').value.trim(),
+      descripcion:             $('#tarea-descripcion').value.trim(),
+      prioridad:               $('#tarea-prioridad').value,
+      es_cronologica:          esCronologica,
       etiquetas,
-      tiempo_estimado_horas: $('#tarea-tiempo-estimado').value ? Number($('#tarea-tiempo-estimado').value) : null,
-      creador_id: AGENTE.id,
-      agentes_ids: agentesIds
+      tiempo_estimado_horas:   $('#tarea-tiempo-estimado').value ? Number($('#tarea-tiempo-estimado').value) : null,
+      creador_id:              AGENTE.id,
+      agentes_ids:             agentesIds
     };
 
     if (esCronologica) {
-      datos.frecuencia = $('#tarea-frecuencia').value;
-      datos.fecha_inicio = new Date().toISOString();
+      datos.frecuencia    = $('#tarea-frecuencia').value;
+      datos.fecha_inicio  = new Date().toISOString();
       if (datos.frecuencia === 'semanal') datos.dias_semana = $$('.dia-semana:checked').map((c) => c.value);
       if (datos.frecuencia === 'mensual') datos.dia_mes = Number($('#tarea-dia-mes').value) || 1;
     } else {
-      datos.fecha_inicio = $('#tarea-fecha-inicio').value || new Date().toISOString();
-      datos.fecha_cierre = $('#tarea-fecha-cierre').value || null;
+      datos.fecha_inicio  = $('#tarea-fecha-inicio').value || new Date().toISOString();
+      datos.fecha_cierre  = $('#tarea-fecha-cierre').value || null;
     }
 
     try {
@@ -372,28 +520,96 @@ function bind() {
       else await crearTarea(datos);
       toastExito('Tarea guardada.');
       cerrarModal('modal-tarea');
+      // Refrescar proyectos globales por si se creó uno nuevo
+      TODOS_PROYECTOS = await listarTodosLosProyectos();
+      actualizarMsProyectos();
       cargarVista();
     } catch (err) { toastError(err.message); }
   });
 }
 
+/* ============================================================
+   INIT
+   ============================================================ */
 async function init() {
   renderLayout('tareas');
   const ctx = await inicializarApp();
   if (!ctx) return;
-  AGENTE = ctx.agente; EMPRESA_ID = ctx.empresaId;
+  AGENTE = ctx.agente;
+  EMPRESA_ID = ctx.empresaId;
+
   const main = document.getElementById('main-content');
-  if (!EMPRESA_ID) { main.innerHTML = '<div class="empty-state"><h3>Crea o selecciona una empresa primero.</h3></div>'; return; }
+  if (!EMPRESA_ID) {
+    main.innerHTML = '<div class="empty-state"><h3>Crea o selecciona una empresa primero.</h3></div>';
+    return;
+  }
+
   main.innerHTML = plantilla();
-  await cargarFiltros();
+
+  // Cargar datos base
+  [EMPRESAS, TODOS_PROYECTOS] = await Promise.all([
+    obtenerEmpresasDelAgente(AGENTE.id),
+    listarTodosLosProyectos()
+  ]);
+
+  if (!EMPRESAS.find((e) => e.id === EMPRESA_ID)) {
+    EMPRESAS.unshift({ id: EMPRESA_ID, nombre: 'Empresa actual' });
+  }
+
+  llenarSelectorEmpresaModal(EMPRESA_ID);
+  await cargarDatosModalEmpresa(EMPRESA_ID);
+
+  // ── Multiselects de toolbar ──────────────────────────────
+  msEmpresas = crearMultiSelect({
+    placeholder: 'Empresas',
+    options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),
+    onChange() {
+      actualizarMsProyectos();
+      PAGINA = 0;
+      cargarVista();
+    }
+  });
+  $('#slot-ms-empresas').appendChild(msEmpresas.el);
+
+  msProyectos = crearMultiSelect({
+    placeholder: 'Proyectos',
+    options: [],
+    onChange() { PAGINA = 0; cargarVista(); }
+  });
+  $('#slot-ms-proyectos').appendChild(msProyectos.el);
+  actualizarMsProyectos();
+
+  msEstados = crearMultiSelect({
+    placeholder: 'Estados',
+    options: ESTADOS.map((s) => ({ value: s, label: ETIQUETAS_ESTADO[s] })),
+    onChange() { PAGINA = 0; cargarVista(); }
+  });
+  $('#slot-ms-estados').appendChild(msEstados.el);
+
+  msPrioridades = crearMultiSelect({
+    placeholder: 'Prioridad',
+    options: Object.entries(ETIQUETAS_PRIORIDAD).map(([k, v]) => ({ value: k, label: v })),
+    onChange() { PAGINA = 0; cargarVista(); }
+  });
+  $('#slot-ms-prioridades').appendChild(msPrioridades.el);
+
+  // ── Bind y carga inicial ─────────────────────────────────
   bind();
   await cargarVista();
 
+  // QS: abrir modal nueva tarea con datos pre-cargados
   if (qs('nueva') === '1') {
     $('#modal-tarea-titulo').textContent = 'Nueva tarea';
+    llenarSelectorEmpresaModal(EMPRESA_ID);
+    $('#tarea-empresa').disabled = false;
     resetFormulario();
     const fechaPre = qs('fecha');
-    if (fechaPre) { $('#tarea-fecha-inicio').value = fechaPre; $('#tarea-fecha-cierre').value = fechaPre; }
+    if (fechaPre) {
+      $('#tarea-fecha-inicio').value = fechaPre;
+      $('#tarea-fecha-cierre').value = fechaPre;
+    }
+    const proyectoQS = qs('proyecto');
+    if (proyectoQS) $('#tarea-proyecto').value = proyectoQS;
     abrirModal('modal-tarea');
   }
 }

@@ -1,0 +1,52 @@
+name: Sync Tareas Ideas
+
+on:
+  # Ejecuta cada lunes a las 08:00 UTC (03:00 hora Perú)
+  schedule:
+    - cron: '0 8 * * 1'
+
+  # Permite ejecutarlo manualmente desde GitHub → Actions
+  workflow_dispatch:
+    inputs:
+      proyecto_nombre:
+        description: 'Nombre del proyecto a consultar (parcial)'
+        required: false
+        default: 'Mejoras y Nuevos proyectos Website Pages'
+
+jobs:
+  fetch-tareas:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # necesario para hacer commit del JSON
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: |
+          cd zv-task-manager
+          npm install --save-dev @supabase/supabase-js 2>/dev/null || \
+          npm install @supabase/supabase-js
+
+      - name: Consultar tareas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PROYECTO_NOMBRE: ${{ github.event.inputs.proyecto_nombre || 'Mejoras y Nuevos proyectos Website Pages' }}
+        run: |
+          cd zv-task-manager
+          node --experimental-vm-modules scripts/fetch-tareas-ideas.js
+
+      - name: Commit JSON actualizado
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add zv-task-manager/data/tareas-ideas.json
+          git diff --staged --quiet || git commit -m "chore: sync tareas-ideas [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+          git push

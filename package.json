@@ -1,0 +1,12 @@
+{
+  "name": "zv-task-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ZV Task Manager - Scripts de automatización",
+  "scripts": {
+    "sync-ideas": "node scripts/fetch-tareas-ideas.js"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.49.4"
+  }
+}

@@ -109,7 +109,7 @@
   --sidebar-width: 260px;
   --sidebar-width-collapsed: 76px;
   --topbar-height: 64px;
-  --panel-width: 38%;
+  --panel-width: 25vw;
 }
 
 /* Tema claro opcional (toggle data-theme="light" en <html>) */

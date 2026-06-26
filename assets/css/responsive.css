@@ -19,7 +19,7 @@
 .kanban { grid-template-columns: 1fr; }
 .auth-page { grid-template-columns: 1fr; }
 .auth-page__visual { display: none; }
-.side-panel { width: 100%; min-width: 0; }
+.side-panel { width: 40%; min-width: 0; }
 .grid-cards { grid-template-columns: 1fr; }
 .btn { min-height: 44px; }
 

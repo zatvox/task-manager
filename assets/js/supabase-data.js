@@ -235,8 +235,10 @@ export async function crearProyecto(datos) {
 }
 
 export async function actualizarProyecto(id, cambios) {
-  const { data, error } = await supabase.from('proyectos').update(cambios).eq('id', id).select().single();
+  const { error } = await supabase.from('proyectos').update(cambios).eq('id', id);
   manejarError('actualizarProyecto', error);
+  const { data, error: errSel } = await supabase.from('proyectos').select('*, departamento:departamentos(nombre)').eq('id', id).single();
+  manejarError('actualizarProyecto:select', errSel);
   return data;
 }
 
@@ -284,12 +286,29 @@ export async function agregarDepartamentoAProyecto(proyecto_id, departamento_id)
 export async function obtenerTareas(filtros = {}, pagina = 0, pageSize = CONFIG.PAGE_SIZE_TAREAS) {
   let query = supabase
     .from('tareas')
-    .select('*, proyecto:proyectos(nombre, color_etiqueta), asignados:agentes_tareas(agente:agentes(id, nombre, foto_url))', { count: 'exact' })
-    .eq('empresa_id', filtros.empresa_id);
+    .select('*, proyecto:proyectos(nombre, color_etiqueta, empresa_id, empresa:empresas(nombre)), asignados:agentes_tareas(agente:agentes(id, nombre, foto_url))', { count: 'exact' });
 
-  if (filtros.proyecto_id) query = query.eq('proyecto_id', filtros.proyecto_id);
-  if (filtros.estado) query = query.eq('estado', filtros.estado);
-  if (filtros.prioridad) query = query.eq('prioridad', filtros.prioridad);
+  // Filtro empresa: acepta empresa_id (single) o empresa_ids (array)
+  const eIds = filtros.empresa_ids?.length ? filtros.empresa_ids : null;
+  if (eIds) query = query.in('empresa_id', eIds);
+  else if (filtros.empresa_id) query = query.eq('empresa_id', filtros.empresa_id);
+  // Sin filtro → RLS muestra solo las empresas del usuario
+
+  // Filtro proyecto: acepta proyecto_id (single) o proyecto_ids (array)
+  const pIds = filtros.proyecto_ids?.length ? filtros.proyecto_ids : null;
+  if (pIds) query = query.in('proyecto_id', pIds);
+  else if (filtros.proyecto_id) query = query.eq('proyecto_id', filtros.proyecto_id);
+
+  // Filtro estado: acepta estado (single) o estados (array)
+  const ests = filtros.estados?.length ? filtros.estados : null;
+  if (ests) query = query.in('estado', ests);
+  else if (filtros.estado) query = query.eq('estado', filtros.estado);
+
+  // Filtro prioridad: acepta prioridad (single) o prioridades (array)
+  const prios = filtros.prioridades?.length ? filtros.prioridades : null;
+  if (prios) query = query.in('prioridad', prios);
+  else if (filtros.prioridad) query = query.eq('prioridad', filtros.prioridad);
+
   if (filtros.es_cronologica !== undefined) query = query.eq('es_cronologica', filtros.es_cronologica);
   if (filtros.busqueda) query = query.ilike('titulo', `%${filtros.busqueda}%`);
   if (filtros.fecha_desde) query = query.gte('fecha_cierre', filtros.fecha_desde);
@@ -301,6 +320,16 @@ export async function obtenerTareas(filtros = {}, pagina = 0, pageSize = CONFIG.
   const { data, error, count } = await query;
   manejarError('obtenerTareas', error);
   return { data: data ?? [], total: count ?? 0 };
+}
+
+/** Todos los proyectos accesibles al usuario (sin filtro de empresa, RLS aplica) */
+export async function listarTodosLosProyectos() {
+  const { data, error } = await supabase
+    .from('proyectos')
+    .select('id, nombre, empresa_id, empresa:empresas(nombre), color_etiqueta')
+    .order('nombre');
+  manejarError('listarTodosLosProyectos', error);
+  return data ?? [];
 }
 
 export async function obtenerTarea(id) {
@@ -515,14 +544,19 @@ export async function completarInstancia(id) {
    CALENDARIO (combina tareas puntuales + instancias de recordatorios)
    ============================================================================ */
 
-export async function obtenerEventosCalendario({ empresa_id, agente_id, desde, hasta, soloMias = false }) {
+export async function obtenerEventosCalendario({ empresa_id, agente_id, desde, hasta, soloMias = false, proyecto_ids = [] }) {
   let queryTareas = supabase
     .from('tareas')
-    .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, fecha_inicio, proyecto:proyectos(nombre, color_etiqueta)')
+    .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, fecha_inicio, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
     .eq('empresa_id', empresa_id)
     .not('fecha_cierre', 'is', null)
     .gte('fecha_cierre', desde)
     .lte('fecha_cierre', hasta);
+
+  // Filtro por proyectos seleccionados
+  if (proyecto_ids.length) {
+    queryTareas = queryTareas.in('proyecto_id', proyecto_ids);
+  }
 
   if (soloMias && agente_id) {
     const { data: misTareasIds } = await supabase.from('agentes_tareas').select('tarea_id').eq('agente_id', agente_id);
