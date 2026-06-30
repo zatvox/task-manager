@@ -68,7 +68,6 @@ export function renderLayout(activeId, { mostrarBuscador = true } = {}) {
           <input type="search" class="form-control" placeholder="Buscar tareas, proyectos…" data-global-search aria-label="Buscar" />
         </div>
         <div class="topbar__actions">
-          <select class="form-control" data-empresa-select style="min-width:160px;" aria-label="Empresa activa"></select>
           <button class="btn btn-icon" data-action="toggle-tema" aria-label="Cambiar tema">🌓</button>
           <div class="dropdown">
             <button class="btn btn-icon bell-badge" data-notif-bell aria-label="Notificaciones">

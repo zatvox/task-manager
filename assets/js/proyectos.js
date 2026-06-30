@@ -3,17 +3,19 @@ import { inicializarApp, toastExito, toastError, abrirModal, cerrarModal, confir
 import {
   listarProyectos, crearProyecto, actualizarProyecto, eliminarProyecto,
   listarDepartamentos, obtenerProgresoProyectos, obtenerEmpresasDelAgente,
-  listarTodosLosProyectos
+  listarTodosLosProyectos, listarAgentesDeEmpresa, listarProyectosIdsPorAgente
 } from './supabase-data.js';
 import { $, $$, escapeHTML, formatearFecha, crearMultiSelect } from './utils.js';
 
 let AGENTE, EMPRESA_ID;
 let EMPRESAS = [];
+let AGENTES_EMPRESA = [];
 let DEPARTAMENTOS_CACHE = {}; // { [empresaId]: [{id, nombre}] }
 let PROGRESO = {};
 
 // Multiselect instances para filtros
-let msEmpresas, msEstados, msDeptos;
+let msEmpresas, msEstados, msDeptos, msAgentes;
+let formDirty = false;
 
 function plantilla() {
   return `
@@ -24,6 +26,7 @@ function plantilla() {
 
     <div class="table-toolbar" style="flex-wrap:wrap;">
       <div id="slot-filtro-empresas"></div>
+      <div id="slot-filtro-agentes"></div>
       <div id="slot-filtro-estados"></div>
       <div id="slot-filtro-deptos"></div>
     </div>
@@ -31,7 +34,7 @@ function plantilla() {
     <div class="grid-cards" id="lista-proyectos"><div class="loading-spinner"></div></div>
 
     <!-- Modal crear / editar proyecto -->
-    <div class="modal-overlay" id="modal-proyecto">
+    <div class="modal-overlay" id="modal-proyecto" data-managed-close="true">
       <div class="modal modal--lg">
         <div class="modal__header">
           <h3 id="modal-titulo">Nuevo proyecto</h3>
@@ -132,32 +135,40 @@ async function cargar() {
   const estadosSel  = msEstados.getSelected();
   const deptosSel   = msDeptos.getSelected();
   const empresasSel = msEmpresas ? msEmpresas.getSelected() : [];
+  const agentesSel  = msAgentes  ? msAgentes.getSelected()  : [];
 
   let lista, progreso;
 
-  if (empresasSel.length > 1) {
-    // Multi-empresa: carga todos los proyectos accesibles (RLS filtra) y aplica filtro cliente
-    const progresoPorEmpresa = await Promise.all(empresasSel.map((id) => obtenerProgresoProyectos(id)));
+  if (empresasSel.length === 1) {
+    // Una empresa seleccionada: carga normal
+    [lista, progreso] = await Promise.all([
+      listarProyectos(empresasSel[0], {}),
+      obtenerProgresoProyectos(empresasSel[0])
+    ]);
+  } else {
+    // Sin filtro (todas) o multi-empresa: usa listarTodosLosProyectos + progreso por cada empresa del usuario
+    const idsProgreso = empresasSel.length ? empresasSel : EMPRESAS.map((e) => e.id);
+    const progresoPorEmpresa = await Promise.all(idsProgreso.map((id) => obtenerProgresoProyectos(id)));
     [lista, progreso] = await Promise.all([
       listarTodosLosProyectos(),
       Promise.resolve(progresoPorEmpresa.flat())
     ]);
-    lista = lista.filter((p) => empresasSel.includes(p.empresa_id));
-  } else {
-    // Sin filtro de empresa o una sola empresa seleccionada
-    const empId = empresasSel[0] || EMPRESA_ID;
-    [lista, progreso] = await Promise.all([
-      listarProyectos(empId, {}),
-      obtenerProgresoProyectos(empId)
-    ]);
+    if (empresasSel.length) lista = lista.filter((p) => empresasSel.includes(p.empresa_id));
   }
 
   PROGRESO = Object.fromEntries(progreso.map((p) => [p.proyecto_id, p]));
 
-  // Filtrado cliente para estados y deptos (siempre)
+  // Filtrado por agentes (miembros de proyectos)
+  let proyectosIdsFiltrados = null;
+  if (agentesSel.length) {
+    proyectosIdsFiltrados = await listarProyectosIdsPorAgente(agentesSel);
+  }
+
+  // Filtrado cliente para estados, deptos y agentes
   const filtrada = lista.filter((p) => {
     if (estadosSel.length && !estadosSel.includes(p.estado)) return false;
     if (deptosSel.length && !deptosSel.includes(p.departamento_id)) return false;
+    if (proyectosIdsFiltrados && !proyectosIdsFiltrados.includes(p.id)) return false;
     return true;
   });
 
@@ -217,6 +228,7 @@ function abrirEdicion(p) {
   cargarDeptosParaEmpresa(p.empresa_id).then(() => {
     $('#proyecto-depto').value = p.departamento_id || '';
   });
+  formDirty = false;
   abrirModal('modal-proyecto');
 }
 
@@ -232,8 +244,21 @@ async function onEliminar(id) {
 }
 
 /* ── Bind ── */
+function intentarCerrarModal() {
+  if (formDirty) {
+    if (!confirm('¿Descartar cambios sin guardar?')) return;
+  }
+  formDirty = false;
+  cerrarModal('modal-proyecto');
+}
+
 function bind() {
-  $$('[data-close]').forEach((b) => b.addEventListener('click', () => cerrarModal('modal-proyecto')));
+  $$('[data-close]').forEach((b) => b.addEventListener('click', intentarCerrarModal));
+  $('#modal-proyecto').addEventListener('modal:request-close', intentarCerrarModal);
+
+  // Detectar cambios en formulario
+  $('#form-proyecto').addEventListener('input',  () => { formDirty = true; });
+  $('#form-proyecto').addEventListener('change', () => { formDirty = true; });
 
   // Cambio de empresa en modal → recarga departamentos
   $('#proyecto-empresa').addEventListener('change', async (e) => {
@@ -252,6 +277,7 @@ function bind() {
     $('#proyecto-fecha-fin').value = '';
     $('#proyecto-estado').value = 'activo';
     cargarDeptosParaEmpresa(EMPRESA_ID).then(() => { $('#proyecto-depto').value = ''; });
+    formDirty = false;
     abrirModal('modal-proyecto');
   });
 
@@ -274,6 +300,7 @@ function bind() {
       if (id) await actualizarProyecto(id, datos);
       else await crearProyecto(datos);
       toastExito('Proyecto guardado.');
+      formDirty = false;
       cerrarModal('modal-proyecto');
       cargar();
     } catch (err) { toastError(err.message); }
@@ -296,11 +323,23 @@ async function init() {
 
   main.innerHTML = plantilla();
 
-  // Cargar empresas del agente
-  EMPRESAS = await obtenerEmpresasDelAgente(AGENTE.id);
+  // Cargar empresas y agentes del agente
+  [EMPRESAS, AGENTES_EMPRESA] = await Promise.all([
+    obtenerEmpresasDelAgente(AGENTE.id),
+    listarAgentesDeEmpresa(EMPRESA_ID)
+  ]);
   if (!EMPRESAS.find((e) => e.id === EMPRESA_ID)) {
     EMPRESAS.unshift({ id: EMPRESA_ID, nombre: 'Empresa actual' });
   }
+
+  // Multiselect: agentes (filtro por miembros de proyecto) — preselecciona usuario actual
+  msAgentes = crearMultiSelect({
+    placeholder: 'Agentes',
+    options: AGENTES_EMPRESA.map((a) => ({ value: a.agente.id, label: a.agente.nombre })),
+    onChange: () => cargar()
+  });
+  msAgentes.setSelected([AGENTE.id]);
+  $('#slot-filtro-agentes').appendChild(msAgentes.el);
 
   // Multiselect: empresas
   msEmpresas = crearMultiSelect({

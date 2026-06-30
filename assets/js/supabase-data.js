@@ -153,7 +153,7 @@ export async function removerAgenteDeEmpresa(membresiaId) {
 export async function listarDepartamentos(empresaId) {
   const { data, error } = await supabase
     .from('departamentos')
-    .select('*, manager:agentes(id, nombre, foto_url)')
+    .select('*, manager:agentes(id, nombre, foto_url), empresa:empresas(nombre)')
     .eq('empresa_id', empresaId)
     .order('nombre');
   manejarError('listarDepartamentos', error);
@@ -262,6 +262,15 @@ export async function listarMiembrosProyecto(proyectoId) {
   return data ?? [];
 }
 
+export async function listarProyectosIdsPorAgente(agenteIds) {
+  const { data, error } = await supabase
+    .from('miembros_proyectos')
+    .select('proyecto_id')
+    .in('agente_id', agenteIds);
+  manejarError('listarProyectosIdsPorAgente', error);
+  return (data ?? []).map((m) => m.proyecto_id);
+}
+
 export async function agregarMiembroProyecto(proyecto_id, agente_id, rol = 'miembro') {
   const { data, error } = await supabase.from('miembros_proyectos').insert({ proyecto_id, agente_id, rol }).select().single();
   manejarError('agregarMiembroProyecto', error);
@@ -287,6 +296,14 @@ export async function obtenerTareas(filtros = {}, pagina = 0, pageSize = CONFIG.
   let query = supabase
     .from('tareas')
     .select('*, proyecto:proyectos(nombre, color_etiqueta, empresa_id, empresa:empresas(nombre)), asignados:agentes_tareas(agente:agentes(id, nombre, foto_url))', { count: 'exact' });
+
+  // Filtro agente asignado: pre-busca tarea_ids en agentes_tareas
+  const agIds = filtros.agente_ids?.length ? filtros.agente_ids : null;
+  if (agIds) {
+    const { data: asig } = await supabase.from('agentes_tareas').select('tarea_id').in('agente_id', agIds);
+    const tarIds = (asig ?? []).map((a) => a.tarea_id);
+    query = query.in('id', tarIds.length ? tarIds : ['00000000-0000-0000-0000-000000000000']);
+  }
 
   // Filtro empresa: acepta empresa_id (single) o empresa_ids (array)
   const eIds = filtros.empresa_ids?.length ? filtros.empresa_ids : null;
@@ -494,16 +511,103 @@ async function crearRecordatorioDesdeTaskCronologica(tarea) {
   return data;
 }
 
-export async function listarRecordatorios(agenteId) {
-  const { data, error } = await supabase.from('recordatorios_cronologicos').select('*').eq('agente_id', agenteId).order('created_at', { ascending: false });
+export async function listarRecordatorios(agenteId, filtros = {}) {
+  let query = supabase
+    .from('recordatorios_cronologicos')
+    .select('*, empresa:empresas(nombre), proyecto:proyectos(nombre, color_etiqueta), asignados:agentes_recordatorios(agente:agentes(id, nombre, foto_url))')
+    .order('created_at', { ascending: false });
+
+  // Filtro empresa
+  if (filtros.empresa_ids?.length) query = query.in('empresa_id', filtros.empresa_ids);
+
+  // Filtro agentes: busca en creador (agente_id) Y en asignados (agentes_recordatorios)
+  const agIds = filtros.agente_ids?.length ? filtros.agente_ids : null;
+  if (agIds) {
+    const { data: asig } = await supabase
+      .from('agentes_recordatorios')
+      .select('recordatorio_id')
+      .in('agente_id', agIds);
+    const asigIds = (asig ?? []).map((a) => a.recordatorio_id);
+
+    // Combina: creador está en agIds OR está asignado
+    if (asigIds.length) {
+      query = query.or(`agente_id.in.(${agIds.join(',')}),id.in.(${asigIds.join(',')})`);
+    } else {
+      query = query.in('agente_id', agIds);
+    }
+  }
+  // Sin filtro de agente → RLS devuelve: creados por mí + asignados a mí
+
+  const { data, error } = await query;
   manejarError('listarRecordatorios', error);
   return data ?? [];
 }
 
+/** Sincroniza asignaciones de agentes para un recordatorio (delete + insert) */
+async function sincronizarAgentesRecordatorio(recordatorioId, agenteIds = []) {
+  // Eliminar asignaciones actuales
+  await supabase.from('agentes_recordatorios').delete().eq('recordatorio_id', recordatorioId);
+  if (!agenteIds.length) return;
+  const filas = agenteIds.map((aid) => ({ recordatorio_id: recordatorioId, agente_id: aid }));
+  const { error } = await supabase.from('agentes_recordatorios').insert(filas);
+  manejarError('sincronizarAgentesRecordatorio', error);
+}
+
+/** Genera instancias quincenales directamente en JS (sin tocar el RPC) */
+async function generarInstanciasQuincenal(recordatorioId, dia1, dia2) {
+  const instancias = [];
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const fin = new Date(hoy); fin.setDate(fin.getDate() + CONFIG.DIAS_GENERACION_RECORDATORIOS);
+
+  for (const d = new Date(hoy); d <= fin; d.setDate(d.getDate() + 1)) {
+    const diaMes = d.getDate();
+    if (diaMes === dia1 || diaMes === dia2) {
+      instancias.push({
+        recordatorio_id: recordatorioId,
+        fecha_programada: d.toISOString().slice(0, 10)
+      });
+    }
+  }
+  if (instancias.length) {
+    await supabase.from('instancias_recordatorios').upsert(instancias, { onConflict: 'recordatorio_id,fecha_programada', ignoreDuplicates: true });
+  }
+}
+
 export async function crearRecordatorio(datos) {
-  const { data, error } = await supabase.from('recordatorios_cronologicos').insert(datos).select().single();
+  const { agentes_ids, ...campos } = datos;
+  const { data, error } = await supabase.from('recordatorios_cronologicos').insert(campos).select().single();
   manejarError('crearRecordatorio', error);
-  await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: data.id, p_dias: CONFIG.DIAS_GENERACION_RECORDATORIOS });
+  // Generar instancias
+  if (datos.frecuencia === 'quincenal') {
+    const dia1 = Number(datos.dias_semana?.[0] || 15);
+    const dia2 = Number(datos.dias_semana?.[1] || 30);
+    await generarInstanciasQuincenal(data.id, dia1, dia2);
+  } else {
+    await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: data.id, p_dias: CONFIG.DIAS_GENERACION_RECORDATORIOS });
+  }
+  // Asignar agentes
+  if (agentes_ids?.length) await sincronizarAgentesRecordatorio(data.id, agentes_ids);
+  return data;
+}
+
+export async function actualizarRecordatorio(id, datos) {
+  const { agentes_ids, ...campos } = datos;
+  const { error } = await supabase.from('recordatorios_cronologicos').update(campos).eq('id', id);
+  manejarError('actualizarRecordatorio', error);
+  // Regenerar instancias futuras
+  if (datos.frecuencia === 'quincenal') {
+    const dia1 = Number(datos.dias_semana?.[0] || 15);
+    const dia2 = Number(datos.dias_semana?.[1] || 30);
+    const hoy = new Date().toISOString().slice(0, 10);
+    await supabase.from('instancias_recordatorios').delete().eq('recordatorio_id', id).gte('fecha_programada', hoy).eq('estado', 'pendiente');
+    await generarInstanciasQuincenal(id, dia1, dia2);
+  } else {
+    await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: id, p_dias: CONFIG.DIAS_GENERACION_RECORDATORIOS });
+  }
+  // Sincronizar agentes (si se pasó el array)
+  if (agentes_ids !== undefined) await sincronizarAgentesRecordatorio(id, agentes_ids);
+  const { data, error: errSel } = await supabase.from('recordatorios_cronologicos').select('*').eq('id', id).single();
+  manejarError('actualizarRecordatorio:select', errSel);
   return data;
 }
 
@@ -544,14 +648,17 @@ export async function completarInstancia(id) {
    CALENDARIO (combina tareas puntuales + instancias de recordatorios)
    ============================================================================ */
 
-export async function obtenerEventosCalendario({ empresa_id, agente_id, desde, hasta, soloMias = false, proyecto_ids = [] }) {
+export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], agente_id, desde, hasta, soloMias = false, proyecto_ids = [] }) {
   let queryTareas = supabase
     .from('tareas')
     .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, fecha_inicio, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
-    .eq('empresa_id', empresa_id)
     .not('fecha_cierre', 'is', null)
     .gte('fecha_cierre', desde)
     .lte('fecha_cierre', hasta);
+
+  // Filtro empresa: array tiene prioridad, luego single, luego RLS (todas las empresas del usuario)
+  if (empresa_ids.length) queryTareas = queryTareas.in('empresa_id', empresa_ids);
+  else if (empresa_id) queryTareas = queryTareas.eq('empresa_id', empresa_id);
 
   // Filtro por proyectos seleccionados
   if (proyecto_ids.length) {

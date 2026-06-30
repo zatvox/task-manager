@@ -5,17 +5,21 @@ import {
   listarAgentesDeEmpresa, listarAgentesDeDepartamento, agregarAgenteADepartamento, quitarAgenteDeDepartamento,
   obtenerEmpresasDelAgente
 } from './supabase-data.js';
-import { $, escapeHTML, iniciales } from './utils.js';
+import { $, escapeHTML, iniciales, crearMultiSelect } from './utils.js';
 
 let AGENTE, EMPRESA_ID;
 let EMPRESAS = [];
 let AGENTES_EMPRESA = [];
+let msEmpresas;
 
 function plantilla() {
   return `
     <div class="page-header">
       <div><h1>Departamentos</h1><p class="page-header__subtitle">Organiza tu empresa en áreas y asigna managers.</p></div>
       <button class="btn btn-primary" id="btn-nuevo">+ Nuevo departamento</button>
+    </div>
+    <div class="table-toolbar" style="flex-wrap:wrap; gap:var(--space-2);">
+      <div id="slot-ms-empresas-dep"></div>
     </div>
     <div class="grid-cards" id="lista-departamentos"><div class="loading-spinner"></div></div>
 
@@ -60,6 +64,7 @@ function tarjeta(d) {
   return `
     <div class="card">
       <div class="card__header"><h3 class="card__title">${escapeHTML(d.nombre)}</h3></div>
+      ${d.empresa?.nombre ? `<p style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-bottom:var(--space-1);">🏢 ${escapeHTML(d.empresa.nombre)}</p>` : ''}
       <p style="color:var(--text-secondary); font-size:var(--fs-sm); min-height:36px;">${escapeHTML(d.descripcion || 'Sin descripción')}</p>
       <p style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-bottom:var(--space-3);">Manager: ${d.manager ? escapeHTML(d.manager.nombre) : 'Sin asignar'}</p>
       <div style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
@@ -73,7 +78,10 @@ function tarjeta(d) {
 
 async function cargar() {
   const cont = $('#lista-departamentos');
-  const lista = await listarDepartamentos(EMPRESA_ID);
+  const empresasSel = msEmpresas?.getSelected() ?? [];
+  const idsACargar = empresasSel.length ? empresasSel : EMPRESAS.map((e) => e.id);
+  const resultados = await Promise.all(idsACargar.map((id) => listarDepartamentos(id)));
+  const lista = resultados.flat();
   cont.innerHTML = lista.length
     ? lista.map(tarjeta).join('')
     : '<div class="empty-state"><div class="empty-state__icon">🗂️</div><h3>Sin departamentos</h3><p>Crea el primero para organizar tu equipo.</p></div>';
@@ -240,6 +248,15 @@ async function init() {
   }
 
   AGENTES_EMPRESA = await listarAgentesDeEmpresa(EMPRESA_ID);
+
+  // Multiselect empresas (filtro toolbar)
+  msEmpresas = crearMultiSelect({
+    placeholder: 'Empresas',
+    options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),
+    onChange: () => cargar()
+  });
+  $('#slot-ms-empresas-dep').appendChild(msEmpresas.el);
+
   bind();
   await cargar();
 }

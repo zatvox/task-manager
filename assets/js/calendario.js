@@ -2,8 +2,8 @@ import { renderLayout } from './layout.js';
 import { inicializarApp, toastExito, toastError } from './main.js';
 import {
   obtenerEventosCalendario, moverTarea, obtenerTarea, completarInstancia,
-  listarComentarios, crearComentario, cambiarEstadoTarea, listarProyectos,
-  listarHistorialTarea
+  listarComentarios, crearComentario, cambiarEstadoTarea,
+  listarHistorialTarea, obtenerEmpresasDelAgente, listarTodosLosProyectos
 } from './supabase-data.js';
 import {
   $, $$, escapeHTML, formatearFecha, formatearHora, iniciales,
@@ -14,17 +14,20 @@ import { CONFIG } from './config.js';
 
 const DOW = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 let EMPRESA_ID, AGENTE_ID, AGENTE;
+let EMPRESAS = [];
 
 let estado = {
   vista: 'mensual',
   fecha: new Date(),
   indicador: cacheLocal.get(CONFIG.STORAGE_KEYS.INDICADOR_CALENDARIO) || 'prioridad',
   soloMias: false,
-  proyectoIds: []   // [] = todos los proyectos
+  proyectoIds: [],   // [] = todos los proyectos
+  empresaIds: []     // [] = todas las empresas del usuario
 };
 
-// Instancias de multiselect (para poder limpiarlas desde fuera si se necesita)
+// Instancias de multiselect
 let msProyectos = null;
+let msEmpresas  = null;
 
 /* ============================================================
    PLANTILLA
@@ -54,6 +57,7 @@ function plantilla() {
 
       <!-- Filtros -->
       <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
+        <div id="slot-filtro-empresas-cal"></div>
         <div id="slot-filtro-proyectos"></div>
         <label class="checkbox-row" style="white-space:nowrap;">
           <input type="checkbox" id="chk-solo-mias" /> Solo mis tareas
@@ -115,12 +119,12 @@ function inicioSemana(d) {
    ============================================================ */
 async function cargarEventos(desde, hasta) {
   return obtenerEventosCalendario({
-    empresa_id: EMPRESA_ID,
+    empresa_ids: estado.empresaIds,   // [] = todas las empresas (RLS)
     agente_id: AGENTE_ID,
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
     soloMias: estado.soloMias,
-    proyecto_ids: estado.proyectoIds   // ← filtro multiselect
+    proyecto_ids: estado.proyectoIds
   });
 }
 
@@ -432,6 +436,16 @@ function navegar(dir) {
 /* ============================================================
    BIND
    ============================================================ */
+async function cargarProyectosMs(empresaIds) {
+  try {
+    const todos = await listarTodosLosProyectos();
+    const filtrados = empresaIds.length
+      ? todos.filter((p) => empresaIds.includes(p.empresa_id))
+      : todos;
+    msProyectos?.setOptions(filtrados.map((p) => ({ value: p.id, label: p.nombre })));
+  } catch (_) { /* sin proyectos */ }
+}
+
 async function bind() {
   // Navegación
   $('#btn-prev').addEventListener('click', () => navegar(-1));
@@ -483,6 +497,19 @@ async function bind() {
     window.location.href = `tareas.html?nueva=1&fecha=${fecha}`;
   });
 
+  // ── MultiSelect de empresas ───────────────────────────────
+  msEmpresas = crearMultiSelect({
+    placeholder: 'Empresas',
+    options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),
+    onChange(ids) {
+      estado.empresaIds = ids;
+      // Recarga proyectos según empresas seleccionadas
+      cargarProyectosMs(ids);
+      renderVistaActual();
+    }
+  });
+  $('#slot-filtro-empresas-cal').appendChild(msEmpresas.el);
+
   // ── MultiSelect de proyectos ──────────────────────────────
   msProyectos = crearMultiSelect({
     placeholder: 'Proyectos',
@@ -494,13 +521,8 @@ async function bind() {
   });
   $('#slot-filtro-proyectos').appendChild(msProyectos.el);
 
-  // Cargar proyectos disponibles en la empresa
-  try {
-    const proyectos = await listarProyectos(EMPRESA_ID);
-    msProyectos.setOptions(
-      proyectos.map((p) => ({ value: p.id, label: p.nombre }))
-    );
-  } catch (_) { /* sin proyectos: no pasa nada */ }
+  // Cargar todos los proyectos accesibles (RLS filtra por empresa del usuario)
+  await cargarProyectosMs([]);
 }
 
 /* ============================================================
@@ -515,12 +537,11 @@ async function init() {
   EMPRESA_ID = ctx.empresaId;
 
   const main = document.getElementById('main-content');
-  if (!EMPRESA_ID) {
-    main.innerHTML = '<div class="empty-state"><h3>Crea o selecciona una empresa primero.</h3></div>';
-    return;
-  }
-
   main.innerHTML = plantilla();
+
+  // Cargar empresas del usuario para el msEmpresas
+  EMPRESAS = await obtenerEmpresasDelAgente(AGENTE_ID);
+
   await bind();
   await renderVistaActual();
 }

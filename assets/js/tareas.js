@@ -19,7 +19,8 @@ let PAGINA = 0;
 const ESTADOS = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
 
 // Multiselect instances (toolbar)
-let msEmpresas, msProyectos, msEstados, msPrioridades;
+let msEmpresas, msProyectos, msEstados, msPrioridades, msAgentes;
+let formDirty = false;
 
 /* ============================================================
    PLANTILLA
@@ -35,6 +36,7 @@ function plantilla() {
       <input class="form-control" id="filtro-busqueda" placeholder="Buscar por título…" style="min-width:200px; flex:1;" />
       <div id="slot-ms-empresas"></div>
       <div id="slot-ms-proyectos"></div>
+      <div id="slot-ms-agentes"></div>
       <div id="slot-ms-estados"></div>
       <div id="slot-ms-prioridades"></div>
       <div class="tabs" style="border-bottom:none; margin:0;">
@@ -47,7 +49,7 @@ function plantilla() {
     <div class="pagination" id="paginacion" style="display:none;"></div>
 
     <!-- Modal crear / editar tarea -->
-    <div class="modal-overlay" id="modal-tarea">
+    <div class="modal-overlay" id="modal-tarea" data-managed-close="true">
       <div class="modal modal--lg">
         <div class="modal__header">
           <h3 id="modal-tarea-titulo">Nueva tarea</h3>
@@ -110,6 +112,7 @@ function plantilla() {
                   <option value="diaria">Diaria</option>
                   <option value="semanal">Semanal</option>
                   <option value="mensual">Mensual</option>
+                  <option value="quincenal">Quincenal</option>
                 </select>
               </div>
               <div class="form-group" id="grupo-dias-semana">
@@ -124,6 +127,19 @@ function plantilla() {
               <div class="form-group" id="grupo-dia-mes" style="display:none;">
                 <label class="form-label">Día del mes</label>
                 <input class="form-control" type="number" min="1" max="31" id="tarea-dia-mes" />
+              </div>
+              <div class="form-group" id="grupo-quincenal-t" style="display:none;">
+                <label class="form-label">Días del mes (quincenal)</label>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label" style="font-size:var(--fs-xs);">Primer día</label>
+                    <input class="form-control" type="number" min="1" max="28" id="tarea-dia-q1" value="15" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-size:var(--fs-xs);">Segundo día</label>
+                    <input class="form-control" type="number" min="1" max="31" id="tarea-dia-q2" value="30" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -186,10 +202,11 @@ function avataresAsignados(asignados = []) {
    ============================================================ */
 function filtrosActuales() {
   return {
-    empresa_ids:  msEmpresas?.getSelected()  ?? [],
-    proyecto_ids: msProyectos?.getSelected() ?? [],
-    estados:      msEstados?.getSelected()   ?? [],
+    empresa_ids:  msEmpresas?.getSelected()    ?? [],
+    proyecto_ids: msProyectos?.getSelected()   ?? [],
+    estados:      msEstados?.getSelected()     ?? [],
     prioridades:  msPrioridades?.getSelected() ?? [],
+    agente_ids:   msAgentes?.getSelected()     ?? [],
     busqueda:     $('#filtro-busqueda')?.value.trim() || undefined
   };
 }
@@ -425,8 +442,9 @@ function toggleCamposCronologicos() {
 
 function toggleFrecuencia() {
   const f = $('#tarea-frecuencia').value;
-  $('#grupo-dias-semana').style.display = f === 'semanal' ? 'block' : 'none';
-  $('#grupo-dia-mes').style.display     = f === 'mensual'  ? 'block' : 'none';
+  $('#grupo-dias-semana').style.display  = f === 'semanal'   ? 'block' : 'none';
+  $('#grupo-dia-mes').style.display      = f === 'mensual'   ? 'block' : 'none';
+  $('#grupo-quincenal-t').style.display  = f === 'quincenal' ? 'block' : 'none';
 }
 
 function resetFormulario() {
@@ -440,6 +458,14 @@ function resetFormulario() {
 /* ============================================================
    BIND
    ============================================================ */
+function intentarCerrarModal() {
+  if (formDirty) {
+    if (!confirm('¿Descartar cambios sin guardar?')) return;
+  }
+  formDirty = false;
+  cerrarModal('modal-tarea');
+}
+
 function bind() {
   // Búsqueda con debounce
   $('#filtro-busqueda').addEventListener('input', debounce(() => { PAGINA = 0; cargarVista(); }, 350));
@@ -465,10 +491,15 @@ function bind() {
     catch (err) { toastError(err.message); }
   });
 
-  // Modal
-  $$('[data-close]').forEach((b) => b.addEventListener('click', () => cerrarModal('modal-tarea')));
+  // Modal — cerrar por X, botón Cancelar, click fuera y Escape
+  $$('[data-close]').forEach((b) => b.addEventListener('click', intentarCerrarModal));
+  $('#modal-tarea').addEventListener('modal:request-close', intentarCerrarModal);
   $('#tarea-cronologica').addEventListener('change', toggleCamposCronologicos);
   $('#tarea-frecuencia').addEventListener('change', toggleFrecuencia);
+
+  // Detectar cambios en formulario
+  $('#form-tarea').addEventListener('input',  () => { formDirty = true; });
+  $('#form-tarea').addEventListener('change', () => { formDirty = true; });
 
   // Cambio de empresa en modal → recargar proyectos y agentes
   $('#tarea-empresa').addEventListener('change', async (e) => {
@@ -481,6 +512,7 @@ function bind() {
     $('#tarea-empresa').disabled = false;
     resetFormulario();
     cargarDatosModalEmpresa(EMPRESA_ID);
+    formDirty = false;
     abrirModal('modal-tarea');
   });
 
@@ -508,8 +540,12 @@ function bind() {
     if (esCronologica) {
       datos.frecuencia    = $('#tarea-frecuencia').value;
       datos.fecha_inicio  = new Date().toISOString();
-      if (datos.frecuencia === 'semanal') datos.dias_semana = $$('.dia-semana:checked').map((c) => c.value);
-      if (datos.frecuencia === 'mensual') datos.dia_mes = Number($('#tarea-dia-mes').value) || 1;
+      if (datos.frecuencia === 'semanal')   datos.dias_semana = $$('.dia-semana:checked').map((c) => c.value);
+      if (datos.frecuencia === 'mensual')   datos.dia_mes = Number($('#tarea-dia-mes').value) || 1;
+      if (datos.frecuencia === 'quincenal') datos.dias_semana = [
+        String(Number($('#tarea-dia-q1').value) || 15),
+        String(Number($('#tarea-dia-q2').value) || 30)
+      ];
     } else {
       datos.fecha_inicio  = $('#tarea-fecha-inicio').value || new Date().toISOString();
       datos.fecha_cierre  = $('#tarea-fecha-cierre').value || null;
@@ -519,6 +555,7 @@ function bind() {
       if (id) { delete datos.agentes_ids; delete datos.creador_id; await actualizarTarea(id, datos); }
       else await crearTarea(datos);
       toastExito('Tarea guardada.');
+      formDirty = false;
       cerrarModal('modal-tarea');
       // Refrescar proyectos globales por si se creó uno nuevo
       TODOS_PROYECTOS = await listarTodosLosProyectos();
@@ -560,6 +597,15 @@ async function init() {
   await cargarDatosModalEmpresa(EMPRESA_ID);
 
   // ── Multiselects de toolbar ──────────────────────────────
+  // Agentes del toolbar (preselecciona usuario actual)
+  msAgentes = crearMultiSelect({
+    placeholder: 'Agentes',
+    options: AGENTES_EMPRESA.map((a) => ({ value: a.agente.id, label: a.agente.nombre })),
+    onChange() { PAGINA = 0; cargarVista(); }
+  });
+  msAgentes.setSelected([AGENTE.id]);
+  $('#slot-ms-agentes').appendChild(msAgentes.el);
+
   msEmpresas = crearMultiSelect({
     placeholder: 'Empresas',
     options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),

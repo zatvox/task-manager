@@ -159,7 +159,7 @@ export const ETIQUETAS_PRIORIDAD = {
  * @param {Array}    config.options       [{value, label}] opciones iniciales
  * @param {Function} config.onChange      Callback(selectedValues: string[]) al cambiar selección
  *
- * @returns {{ el: HTMLElement, getSelected(): string[], setOptions(opts): void, clear(): void }}
+ * @returns {{ el: HTMLElement, getSelected(): string[], setOptions(opts): void, setSelected(vals): void, clear(): void }}
  */
 export function crearMultiSelect({ placeholder = 'Seleccionar', options = [], onChange } = {}) {
   const selected = new Set();
@@ -267,6 +267,13 @@ export function crearMultiSelect({ placeholder = 'Seleccionar', options = [], on
       updateBtn();
       buildMenu(opts);
       onChange?.([...selected]);
+    },
+    setSelected(vals = []) {
+      selected.clear();
+      vals.forEach((v) => selected.add(v));
+      updateBtn();
+      buildMenu(currentOptions);
+      // Sin llamar a onChange para evitar disparo en init
     },
     clear: clearAll
   };

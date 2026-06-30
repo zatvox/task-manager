@@ -95,15 +95,24 @@ export function confirmar({ titulo = '¿Confirmar acción?', mensaje, textoConfi
 }
 
 // Cerrar modales al hacer click fuera o tecla Escape
+// Los overlays con data-managed-close="true" manejan su propio cierre (dirty check)
 document.addEventListener('click', (e) => {
-  if (e.target.classList?.contains('modal-overlay')) {
+  if (e.target.classList?.contains('modal-overlay') && !e.target.dataset.managedClose) {
     e.target.classList.remove('open');
     document.body.style.overflow = '';
+  } else if (e.target.classList?.contains('modal-overlay') && e.target.dataset.managedClose) {
+    e.target.dispatchEvent(new CustomEvent('modal:request-close', { bubbles: false }));
   }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
+    document.querySelectorAll('.modal-overlay.open').forEach((m) => {
+      if (m.dataset.managedClose) {
+        m.dispatchEvent(new CustomEvent('modal:request-close', { bubbles: false }));
+      } else {
+        m.classList.remove('open');
+      }
+    });
     document.querySelectorAll('.side-panel.open').forEach((p) => p.classList.remove('open'));
     document.querySelectorAll('.side-panel-overlay.open').forEach((p) => p.classList.remove('open'));
   }
@@ -213,25 +222,27 @@ export async function inicializarCampanaNotificaciones(agenteId) {
    ============================================================================ */
 
 export async function inicializarSelectorEmpresa(agenteId) {
-  const select = document.querySelector('[data-empresa-select]');
-  if (!select) return null;
-
   const empresas = await obtenerEmpresasDelAgente(agenteId);
-  select.innerHTML = empresas.map((e) => `<option value="${e.id}">${escapeHTML(e.nombre)}</option>`).join('');
 
+  // Determinar empresa activa (cache o primera disponible)
   let activa = cacheLocal.get(CONFIG.STORAGE_KEYS.EMPRESA_ACTIVA);
   if (!activa || !empresas.find((e) => e.id === activa)) {
-    activa = empresas[0]?.id;
+    activa = empresas[0]?.id ?? null;
   }
   if (activa) {
-    select.value = activa;
     cacheLocal.set(CONFIG.STORAGE_KEYS.EMPRESA_ACTIVA, activa, CONFIG.CACHE_TTL_EMPRESA);
   }
 
-  select.addEventListener('change', () => {
-    cacheLocal.set(CONFIG.STORAGE_KEYS.EMPRESA_ACTIVA, select.value, CONFIG.CACHE_TTL_EMPRESA);
-    window.location.reload();
-  });
+  // Si existe el select en el navbar (modo legacy), poblarlo
+  const select = document.querySelector('[data-empresa-select]');
+  if (select) {
+    select.innerHTML = empresas.map((e) => `<option value="${e.id}">${escapeHTML(e.nombre)}</option>`).join('');
+    if (activa) select.value = activa;
+    select.addEventListener('change', () => {
+      cacheLocal.set(CONFIG.STORAGE_KEYS.EMPRESA_ACTIVA, select.value, CONFIG.CACHE_TTL_EMPRESA);
+      window.location.reload();
+    });
+  }
 
   return activa;
 }
