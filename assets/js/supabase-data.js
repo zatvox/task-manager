@@ -343,8 +343,8 @@ export async function obtenerTareas(filtros = {}, pagina = 0, pageSize = CONFIG.
 export async function listarTodosLosProyectos() {
   const { data, error } = await supabase
     .from('proyectos')
-    .select('id, nombre, empresa_id, empresa:empresas(nombre), color_etiqueta')
-    .order('nombre');
+    .select('*, empresa:empresas(nombre), departamento:departamentos(nombre), creador:agentes(nombre)')
+    .order('created_at', { ascending: false });
   manejarError('listarTodosLosProyectos', error);
   return data ?? [];
 }
