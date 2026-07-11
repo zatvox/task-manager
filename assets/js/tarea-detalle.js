@@ -87,11 +87,37 @@ async function init() {
             </div>
             <div class="form-group"><label class="form-label">Etiquetas</label><input class="form-control" id="f-etiquetas" value="${(tarea.etiquetas || []).join(', ')}" /></div>
           </div>
-          ${!tarea.es_cronologica ? `
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="f-fecha-inicio" value="${tarea.fecha_inicio ? tarea.fecha_inicio.slice(0,10) : ''}" /></div>
-            <div class="form-group"><label class="form-label">Fecha de cierre</label><input class="form-control" type="date" id="f-fecha-cierre" value="${tarea.fecha_cierre ? tarea.fecha_cierre.slice(0,10) : ''}" /></div>
-          </div>` : `<p class="badge badge-estado-en_progreso">🔁 Tarea cronológica (${escapeHTML(tarea.frecuencia || '')})</p>`}
+          <div id="seccion-cronologica" style="margin-bottom:var(--space-3);">
+            <label class="checkbox-row" style="margin-bottom:var(--space-3); cursor:pointer;">
+              <input type="checkbox" id="f-es-cronologica" ${tarea.es_cronologica ? 'checked' : ''} />
+              <span style="font-size:var(--fs-sm); font-weight:600; color:var(--color-accent);">🔁 Tarea cronológica</span>
+            </label>
+            <div id="bloque-fechas" style="${tarea.es_cronologica ? 'display:none;' : ''}">
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="f-fecha-inicio" value="${tarea.fecha_inicio ? tarea.fecha_inicio.slice(0,10) : ''}" /></div>
+                <div class="form-group"><label class="form-label">Fecha de cierre</label><input class="form-control" type="date" id="f-fecha-cierre" value="${tarea.fecha_cierre ? tarea.fecha_cierre.slice(0,10) : ''}" /></div>
+              </div>
+            </div>
+            <div id="bloque-cronologico" style="${!tarea.es_cronologica ? 'display:none;' : ''}">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Frecuencia</label>
+                  <select class="form-control" id="f-frecuencia">
+                    ${['diaria','semanal','quincenal','mensual','anual'].map(f => `<option value="${f}" ${tarea.frecuencia === f ? 'selected' : ''}>${f.charAt(0).toUpperCase()+f.slice(1)}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              <div id="bloque-dias-semana" style="${tarea.frecuencia === 'semanal' ? '' : 'display:none;'}">
+                <label class="form-label">Días de la semana</label>
+                <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; margin-bottom:var(--space-3);">
+                  ${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,i) => `<label class="checkbox-row" style="margin:0;"><input type="checkbox" class="check-dia-semana" value="${i+1}" ${(tarea.dias_semana||[]).includes(i+1)?'checked':''}/><span style="font-size:var(--fs-xs);">${d}</span></label>`).join('')}
+                </div>
+              </div>
+              <div id="bloque-dia-mes" style="${['mensual','quincenal'].includes(tarea.frecuencia||'') ? '' : 'display:none;'}">
+                <div class="form-group"><label class="form-label">Día del mes</label><input class="form-control" type="number" id="f-dia-mes" min="1" max="31" value="${tarea.dia_mes ?? ''}" /></div>
+              </div>
+            </div>
+          </div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Tiempo estimado (h)</label><input class="form-control" type="number" id="f-tiempo-estimado" value="${tarea.tiempo_estimado_horas ?? ''}" /></div>
             <div class="form-group"><label class="form-label">Tiempo real (h)</label><input class="form-control" type="number" step="0.5" id="f-tiempo-real" value="${tarea.tiempo_real_horas ?? ''}" /></div>
@@ -145,6 +171,20 @@ async function init() {
     </div>
   `;
 
+  // Toggle cronológica ↔ puntual
+  $('#f-es-cronologica').addEventListener('change', () => {
+    const on = $('#f-es-cronologica').checked;
+    $('#bloque-fechas').style.display      = on ? 'none' : '';
+    $('#bloque-cronologico').style.display = on ? ''     : 'none';
+  });
+
+  // Cambio de frecuencia → mostrar/ocultar campos extra
+  $('#f-frecuencia').addEventListener('change', () => {
+    const frec = $('#f-frecuencia').value;
+    $('#bloque-dias-semana').style.display = frec === 'semanal'                     ? '' : 'none';
+    $('#bloque-dia-mes').style.display     = ['mensual','quincenal'].includes(frec) ? '' : 'none';
+  });
+
   // Cambio de empresa → recarga proyectos y agentes
   $('#f-empresa').addEventListener('change', async (e) => {
     await recargarEmpresa(e.target.value);
@@ -163,9 +203,28 @@ async function init() {
       tiempo_estimado_horas: $('#f-tiempo-estimado').value ? Number($('#f-tiempo-estimado').value) : null,
       tiempo_real_horas: $('#f-tiempo-real').value ? Number($('#f-tiempo-real').value) : null
     };
-    if (!tarea.es_cronologica) {
+    const esCronologica = $('#f-es-cronologica').checked;
+    cambios.es_cronologica = esCronologica;
+    if (esCronologica) {
+      cambios.frecuencia   = $('#f-frecuencia').value;
+      cambios.fecha_inicio = null;
+      cambios.fecha_cierre = null;
+      if (cambios.frecuencia === 'semanal') {
+        cambios.dias_semana = $$('.check-dia-semana:checked').map(c => Number(c.value));
+        cambios.dia_mes     = null;
+      } else if (['mensual','quincenal'].includes(cambios.frecuencia)) {
+        cambios.dia_mes     = $('#f-dia-mes').value ? Number($('#f-dia-mes').value) : null;
+        cambios.dias_semana = null;
+      } else {
+        cambios.dias_semana = null;
+        cambios.dia_mes     = null;
+      }
+    } else {
       cambios.fecha_inicio = $('#f-fecha-inicio').value || null;
       cambios.fecha_cierre = $('#f-fecha-cierre').value || null;
+      cambios.frecuencia   = null;
+      cambios.dias_semana  = null;
+      cambios.dia_mes      = null;
     }
     if (cambios.estado === 'completado') cambios.completado_por = agente.id;
     try { await actualizarTarea(tareaId, cambios); toastExito('Tarea actualizada.'); }
