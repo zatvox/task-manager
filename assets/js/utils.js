@@ -193,12 +193,23 @@ export function crearMultiSelect({ placeholder = 'Seleccionar', options = [], on
       const title = document.createElement('span');
       title.style.cssText = 'font-size:var(--fs-xs); color:var(--text-tertiary); font-weight:600;';
       title.textContent = placeholder.toUpperCase();
+      const selectAllBtn = document.createElement('button');
+      selectAllBtn.className = 'multiselect__clear';
+      selectAllBtn.type = 'button';
+      selectAllBtn.textContent = 'Todos';
+      selectAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        currentOptions.forEach(({ value }) => selected.add(value));
+        updateBtn();
+        buildMenu(currentOptions);
+        onChange?.([...selected]);
+      });
       const clearBtn = document.createElement('button');
       clearBtn.className = 'multiselect__clear';
       clearBtn.type = 'button';
       clearBtn.textContent = 'Limpiar';
       clearBtn.addEventListener('click', (e) => { e.stopPropagation(); clearAll(); });
-      hdr.append(title, clearBtn);
+      hdr.append(title, selectAllBtn, clearBtn);
       menu.appendChild(hdr);
     } else {
       const empty = document.createElement('div');

@@ -2,7 +2,8 @@ import { renderLayout } from './layout.js';
 import { inicializarApp, toastExito, toastError, abrirModal, cerrarModal, confirmar } from './main.js';
 import {
   obtenerTareas, crearTarea, actualizarTarea, eliminarTarea, cambiarEstadoTarea,
-  listarProyectos, listarAgentesDeEmpresa, obtenerEmpresasDelAgente, listarTodosLosProyectos
+  listarProyectos, listarAgentesDeEmpresa, obtenerEmpresasDelAgente, listarTodosLosProyectos,
+  reasignarAgentesATarea
 } from './supabase-data.js';
 import {
   $, $$, qs, escapeHTML, formatearFecha, esVencida,
@@ -10,21 +11,19 @@ import {
 } from './utils.js';
 
 let EMPRESA_ID, AGENTE;
-let EMPRESAS      = [];   // Todas las empresas del usuario
-let TODOS_PROYECTOS = []; // Proyectos de todas las empresas
-let AGENTES_EMPRESA = []; // Agentes de la empresa activa en el modal
+let EMPRESAS      = [];
+let TODOS_PROYECTOS = [];
+let AGENTES_EMPRESA = [];
 
-let VISTA = 'tabla';
-let PAGINA = 0;
-const ESTADOS = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
+let VISTA      = 'tabla';
+let AGRUPACION = 'estado'; // 'estado' | 'empresa' | 'proyecto' | 'agente'
+let PAGINA     = 0;
+const ESTADOS  = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
 
-// Multiselect instances (toolbar)
 let msEmpresas, msProyectos, msEstados, msPrioridades, msAgentes;
 let formDirty = false;
 
-/* ============================================================
-   PLANTILLA
-   ============================================================ */
+/* ============================================================ PLANTILLA */
 function plantilla() {
   return `
     <div class="page-header">
@@ -45,6 +44,14 @@ function plantilla() {
       </div>
     </div>
 
+    <div id="kanban-group-bar" class="kanban-group-bar" style="display:${VISTA === 'kanban' ? 'flex' : 'none'};">
+      <span class="kanban-group-label">Agrupar por:</span>
+      <button class="kanban-group-btn ${AGRUPACION==='estado'   ? 'active':''}" data-agrup="estado">📋 Estado</button>
+      <button class="kanban-group-btn ${AGRUPACION==='empresa'  ? 'active':''}" data-agrup="empresa">🏢 Empresa</button>
+      <button class="kanban-group-btn ${AGRUPACION==='proyecto' ? 'active':''}" data-agrup="proyecto">📁 Proyecto</button>
+      <button class="kanban-group-btn ${AGRUPACION==='agente'   ? 'active':''}" data-agrup="agente">👤 Agente</button>
+    </div>
+
     <div id="vista-contenedor"><div class="loading-spinner"></div></div>
     <div class="pagination" id="paginacion" style="display:none;"></div>
 
@@ -58,13 +65,10 @@ function plantilla() {
         <form id="form-tarea">
           <div class="modal__body">
             <input type="hidden" id="tarea-id" />
-
-            <!-- Selector de empresa -->
             <div class="form-group">
               <label class="form-label">Empresa</label>
               <select class="form-control" id="tarea-empresa"></select>
             </div>
-
             <div class="form-group">
               <label class="form-label">Título</label>
               <input class="form-control" id="tarea-titulo" required />
@@ -73,7 +77,6 @@ function plantilla() {
               <label class="form-label">Descripción</label>
               <textarea class="form-control" id="tarea-descripcion"></textarea>
             </div>
-
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Proyecto</label>
@@ -88,12 +91,10 @@ function plantilla() {
                 </select>
               </div>
             </div>
-
             <div class="form-group checkbox-row">
               <input type="checkbox" id="tarea-cronologica" />
               <label for="tarea-cronologica">Es recordatorio cronológico (sin fecha de cierre fija)</label>
             </div>
-
             <div id="campos-puntual" class="form-row">
               <div class="form-group">
                 <label class="form-label">Fecha de inicio</label>
@@ -104,7 +105,6 @@ function plantilla() {
                 <input class="form-control" type="date" id="tarea-fecha-cierre" />
               </div>
             </div>
-
             <div id="campos-cronologica" style="display:none;">
               <div class="form-group">
                 <label class="form-label">Frecuencia</label>
@@ -142,7 +142,6 @@ function plantilla() {
                 </div>
               </div>
             </div>
-
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Tiempo estimado (horas)</label>
@@ -153,7 +152,6 @@ function plantilla() {
                 <input class="form-control" id="tarea-etiquetas" placeholder="urgente, cliente-x" />
               </div>
             </div>
-
             <div class="form-group">
               <label class="form-label">Asignar agentes</label>
               <div id="lista-asignar-agentes" style="display:flex; flex-wrap:wrap; gap:var(--space-2);"></div>
@@ -183,9 +181,7 @@ function plantilla() {
   `;
 }
 
-/* ============================================================
-   HELPERS UI
-   ============================================================ */
+/* ============================================================ HELPERS */
 function badgeEstado(t) {
   const vencida = esVencida(t.fecha_cierre, t.estado);
   return `<span class="badge badge-estado-${t.estado}" ${vencida ? 'style="color:var(--color-danger)"' : ''}>${ETIQUETAS_ESTADO[t.estado]}</span>`;
@@ -197,9 +193,7 @@ function avataresAsignados(asignados = []) {
   ).join('')}</div>`;
 }
 
-/* ============================================================
-   FILTROS (toolbar)
-   ============================================================ */
+/* ============================================================ FILTROS */
 function filtrosActuales() {
   return {
     empresa_ids:  msEmpresas?.getSelected()    ?? [],
@@ -211,13 +205,11 @@ function filtrosActuales() {
   };
 }
 
-/* ── Popula multiselect de proyectos según empresas seleccionadas ── */
 function actualizarMsProyectos() {
   const empresasSeleccionadas = msEmpresas.getSelected();
   const proyectosFiltrados = empresasSeleccionadas.length
     ? TODOS_PROYECTOS.filter((p) => empresasSeleccionadas.includes(p.empresa_id))
     : TODOS_PROYECTOS;
-
   msProyectos.setOptions(
     proyectosFiltrados.map((p) => ({
       value: p.id,
@@ -228,20 +220,16 @@ function actualizarMsProyectos() {
   );
 }
 
-/* ============================================================
-   CARGA DE DATOS PARA EL MODAL
-   ============================================================ */
+/* ============================================================ DATOS MODAL */
 async function cargarDatosModalEmpresa(empresaId) {
   const [proyectos, agentes] = await Promise.all([
     listarProyectos(empresaId),
     listarAgentesDeEmpresa(empresaId)
   ]);
   AGENTES_EMPRESA = agentes;
-
   $('#tarea-proyecto').innerHTML =
     '<option value="">Sin proyecto</option>' +
     proyectos.map((p) => `<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join('');
-
   $('#lista-asignar-agentes').innerHTML = agentes.map((a) => `
     <label class="checkbox-row" style="background:var(--bg-surface-raised); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm);">
       <input type="checkbox" value="${a.agente.id}" class="agente-check" /> ${escapeHTML(a.agente.nombre)}
@@ -254,15 +242,110 @@ function llenarSelectorEmpresaModal(selectedId) {
   ).join('');
 }
 
-/* ============================================================
-   VISTA TABLA / KANBAN
-   ============================================================ */
+/* ============================================================ KANBAN */
+
+/** Construye tarjeta para el kanban de tareas */
+function kanbanCardTarea(t) {
+  const vencida = esVencida(t.fecha_cierre, t.estado);
+  const borderLeft = vencida ? 'border-left:3px solid var(--color-danger);' : '';
+  const empresa = AGRUPACION !== 'empresa' ? (t.proyecto?.empresa?.nombre || '') : '';
+  return `
+    <div class="kanban-card" draggable="true" data-id="${t.id}" data-abrir="${t.id}" style="${borderLeft}">
+      <div style="font-weight:600; font-size:var(--fs-sm); margin-bottom:var(--space-2); line-height:1.3;">
+        ${escapeHTML(t.titulo)}${t.es_cronologica ? ' 🔁' : ''}
+      </div>
+      ${AGRUPACION !== 'estado' ? `<div style="margin-bottom:var(--space-2);">${badgeEstado(t)}</div>` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-2);">
+        <span class="badge badge-prioridad-${t.prioridad}">${ETIQUETAS_PRIORIDAD[t.prioridad]}</span>
+        ${AGRUPACION !== 'agente' ? avataresAsignados(t.asignados) : ''}
+      </div>
+      ${t.fecha_cierre ? `<div style="font-size:var(--fs-xs); color:${vencida ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:var(--space-2);">📅 ${formatearFecha(t.fecha_cierre)}</div>` : ''}
+      ${AGRUPACION !== 'proyecto' && t.proyecto ? `<div style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-top:var(--space-1);"><span style="color:${t.proyecto.color_etiqueta || '#00d4ff'}">●</span> ${escapeHTML(t.proyecto.nombre)}</div>` : ''}
+      ${empresa ? `<div style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-top:var(--space-1);">🏢 ${escapeHTML(empresa)}</div>` : ''}
+    </div>`;
+}
+
+/** Renderiza el board kanban completo */
+function cargarKanban(cont, todas) {
+  let columnas, getColId, onDrop;
+
+  if (AGRUPACION === 'estado') {
+    columnas   = ESTADOS.map((e) => ({ id: e, label: ETIQUETAS_ESTADO[e] }));
+    getColId   = (t) => t.estado || 'nuevo';
+    onDrop     = async (id, val) => cambiarEstadoTarea(id, val, AGENTE.id);
+  } else if (AGRUPACION === 'empresa') {
+    columnas   = [{ id: '__sin__', label: 'Sin empresa' }, ...EMPRESAS.map((e) => ({ id: e.id, label: e.nombre }))];
+    getColId   = (t) => t.empresa_id || '__sin__';
+    onDrop     = async (id, val) => actualizarTarea(id, { empresa_id: val === '__sin__' ? null : val });
+  } else if (AGRUPACION === 'proyecto') {
+    columnas   = [
+      { id: '__sin__', label: 'Sin proyecto' },
+      ...TODOS_PROYECTOS.map((p) => ({ id: p.id, label: p.nombre, color: p.color_etiqueta }))
+    ];
+    getColId   = (t) => t.proyecto_id || '__sin__';
+    onDrop     = async (id, val) => actualizarTarea(id, { proyecto_id: val === '__sin__' ? null : val });
+  } else { // agente
+    columnas   = [
+      { id: '__sin__', label: 'Sin asignar' },
+      ...AGENTES_EMPRESA.map((a) => ({ id: a.agente.id, label: a.agente.nombre }))
+    ];
+    getColId   = (t) => t.asignados?.[0]?.agente?.id || '__sin__';
+    onDrop     = async (id, val) => reasignarAgentesATarea(id, val === '__sin__' ? [] : [val]);
+  }
+
+  cont.innerHTML = `<div class="kanban">
+    ${columnas.map((col) => {
+      const items = todas.filter((t) => getColId(t) === col.id);
+      const topBorder = col.color ? `border-top:3px solid ${col.color};` : '';
+      return `<div class="kanban-column" data-col="${col.id}" style="${topBorder}">
+        <div class="kanban-column__title">
+          <div class="kanban-column__title-left">
+            <span>${escapeHTML(col.label)}</span>
+          </div>
+          <span class="badge badge-estado-${col.id === '__sin__' ? 'archivado' : 'en_progreso'}">${items.length}</span>
+        </div>
+        <div class="kanban-cards" data-drop="${col.id}">
+          ${items.map((t) => kanbanCardTarea(t)).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  cont.querySelectorAll('[data-abrir]').forEach((c) =>
+    c.addEventListener('click', (e) => { if (!c.classList.contains('dragging')) abrirPanelTarea(c.dataset.abrir); }));
+  inicializarDragDropKanban(onDrop);
+}
+
+function inicializarDragDropKanban(onDropCb) {
+  $$('.kanban-card').forEach((card) => {
+    card.addEventListener('dragstart', () => card.classList.add('dragging'));
+    card.addEventListener('dragend',   () => card.classList.remove('dragging'));
+  });
+  $$('.kanban-cards').forEach((dropzone) => {
+    dropzone.addEventListener('dragover',  (e) => { e.preventDefault(); dropzone.closest('.kanban-column').classList.add('drag-over'); });
+    dropzone.addEventListener('dragleave', ()  => dropzone.closest('.kanban-column').classList.remove('drag-over'));
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.closest('.kanban-column').classList.remove('drag-over');
+      const id  = document.querySelector('.kanban-card.dragging')?.dataset.id;
+      const val = dropzone.dataset.drop;
+      if (!id || !val) return;
+      try {
+        await onDropCb(id, val);
+        toastExito('Actualizado.');
+        cargarVista();
+      } catch (err) { toastError(err.message); }
+    });
+  });
+}
+
+/* ============================================================ VISTA */
 async function cargarVista() {
   const cont = $('#vista-contenedor');
   cont.innerHTML = '<div class="loading-spinner"></div>';
-  const { data, total } = await obtenerTareas(filtrosActuales(), PAGINA, 25);
 
   if (VISTA === 'tabla') {
+    const { data, total } = await obtenerTareas(filtrosActuales(), PAGINA, 25);
     cont.innerHTML = `
       <div class="table-wrap">
         <table class="data-table">
@@ -289,52 +372,9 @@ async function cargarVista() {
     renderPaginacion(total);
   } else {
     const { data: todas } = await obtenerTareas(filtrosActuales(), 0, 200);
-    cont.innerHTML = `<div class="kanban">${ESTADOS.map((estado) => `
-      <div class="kanban-column" data-estado="${estado}">
-        <div class="kanban-column__title">
-          <span>${ETIQUETAS_ESTADO[estado]}</span>
-          <span class="badge badge-estado-${estado}">${todas.filter((t) => t.estado === estado).length}</span>
-        </div>
-        <div class="kanban-cards" data-drop="${estado}">
-          ${todas.filter((t) => t.estado === estado).map((t) => `
-            <div class="kanban-card" draggable="true" data-id="${t.id}" data-abrir="${t.id}">
-              <div style="font-weight:600; font-size:var(--fs-sm); margin-bottom:var(--space-2);">${escapeHTML(t.titulo)}</div>
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="badge badge-prioridad-${t.prioridad}">${ETIQUETAS_PRIORIDAD[t.prioridad]}</span>
-                ${avataresAsignados(t.asignados)}
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>`).join('')}</div>`;
-
-    cont.querySelectorAll('[data-abrir]').forEach((c) =>
-      c.addEventListener('click', (e) => { if (!c.classList.contains('dragging')) abrirPanelTarea(c.dataset.abrir); }));
-    inicializarDragDropKanban();
+    cargarKanban(cont, todas);
     $('#paginacion').style.display = 'none';
   }
-}
-
-function inicializarDragDropKanban() {
-  $$('.kanban-card').forEach((card) => {
-    card.addEventListener('dragstart', () => card.classList.add('dragging'));
-    card.addEventListener('dragend', () => card.classList.remove('dragging'));
-  });
-  $$('.kanban-cards').forEach((col) => {
-    col.addEventListener('dragover', (e) => { e.preventDefault(); col.closest('.kanban-column').classList.add('drag-over'); });
-    col.addEventListener('dragleave', () => col.closest('.kanban-column').classList.remove('drag-over'));
-    col.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      col.closest('.kanban-column').classList.remove('drag-over');
-      const id = $('.dragging')?.dataset.id;
-      if (!id) return;
-      const nuevoEstado = col.dataset.drop;
-      try {
-        await cambiarEstadoTarea(id, nuevoEstado, AGENTE.id);
-        toastExito(`Tarea movida a "${ETIQUETAS_ESTADO[nuevoEstado]}".`);
-        cargarVista();
-      } catch (err) { toastError(err.message); }
-    });
-  });
 }
 
 function renderPaginacion(total) {
@@ -351,16 +391,14 @@ function renderPaginacion(total) {
   $('#btn-next')?.addEventListener('click', () => { PAGINA++; cargarVista(); });
 }
 
-/* ============================================================
-   PANEL LATERAL DE DETALLE
-   ============================================================ */
+/* ============================================================ PANEL LATERAL */
 async function abrirPanelTarea(id) {
   const { obtenerTarea, listarComentarios, crearComentario, listarHistorialTarea } = await import('./supabase-data.js');
   const tarea = await obtenerTarea(id);
   if (!tarea) return;
 
   $('#panel-titulo').textContent = tarea.titulo;
-  $('#btn-editar-completo').href = `tarea-detalle.html?id=${id}`;
+  $('#btn-editar-completo').href  = `tarea-detalle.html?id=${id}`;
   $('#btn-eliminar-tarea').dataset.id = id;
 
   const comentarios = await listarComentarios(id);
@@ -431,12 +469,10 @@ function cerrarPanel() {
   $('#panel-overlay').classList.remove('open');
 }
 
-/* ============================================================
-   MODAL CREAR / EDITAR
-   ============================================================ */
+/* ============================================================ MODAL */
 function toggleCamposCronologicos() {
   const es = $('#tarea-cronologica').checked;
-  $('#campos-puntual').style.display = es ? 'none' : 'grid';
+  $('#campos-puntual').style.display    = es ? 'none' : 'grid';
   $('#campos-cronologica').style.display = es ? 'block' : 'none';
 }
 
@@ -455,9 +491,7 @@ function resetFormulario() {
   toggleFrecuencia();
 }
 
-/* ============================================================
-   BIND
-   ============================================================ */
+/* ============================================================ BIND */
 function intentarCerrarModal() {
   if (formDirty) {
     if (!confirm('¿Descartar cambios sin guardar?')) return;
@@ -467,7 +501,6 @@ function intentarCerrarModal() {
 }
 
 function bind() {
-  // Búsqueda con debounce
   $('#filtro-busqueda').addEventListener('input', debounce(() => { PAGINA = 0; cargarVista(); }, 350));
 
   // Tabs de vista
@@ -475,7 +508,17 @@ function bind() {
     tab.addEventListener('click', () => {
       VISTA = tab.dataset.vista;
       $$('.tab[data-vista]').forEach((t) => t.classList.toggle('active', t === tab));
+      const bar = $('#kanban-group-bar');
+      if (bar) bar.style.display = VISTA === 'kanban' ? 'flex' : 'none';
       PAGINA = 0;
+      cargarVista();
+    }));
+
+  // Agrupación kanban
+  $$('.kanban-group-btn').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      AGRUPACION = btn.dataset.agrup;
+      $$('.kanban-group-btn').forEach((b) => b.classList.toggle('active', b === btn));
       cargarVista();
     }));
 
@@ -491,17 +534,14 @@ function bind() {
     catch (err) { toastError(err.message); }
   });
 
-  // Modal — cerrar por X, botón Cancelar, click fuera y Escape
   $$('[data-close]').forEach((b) => b.addEventListener('click', intentarCerrarModal));
   $('#modal-tarea').addEventListener('modal:request-close', intentarCerrarModal);
   $('#tarea-cronologica').addEventListener('change', toggleCamposCronologicos);
   $('#tarea-frecuencia').addEventListener('change', toggleFrecuencia);
 
-  // Detectar cambios en formulario
   $('#form-tarea').addEventListener('input',  () => { formDirty = true; });
   $('#form-tarea').addEventListener('change', () => { formDirty = true; });
 
-  // Cambio de empresa en modal → recargar proyectos y agentes
   $('#tarea-empresa').addEventListener('change', async (e) => {
     await cargarDatosModalEmpresa(e.target.value);
   });
@@ -525,21 +565,21 @@ function bind() {
     const etiquetas       = $('#tarea-etiquetas').value.split(',').map((s) => s.trim()).filter(Boolean);
 
     const datos = {
-      empresa_id:              empresaId,
-      proyecto_id:             $('#tarea-proyecto').value || null,
-      titulo:                  $('#tarea-titulo').value.trim(),
-      descripcion:             $('#tarea-descripcion').value.trim(),
-      prioridad:               $('#tarea-prioridad').value,
-      es_cronologica:          esCronologica,
+      empresa_id:            empresaId,
+      proyecto_id:           $('#tarea-proyecto').value || null,
+      titulo:                $('#tarea-titulo').value.trim(),
+      descripcion:           $('#tarea-descripcion').value.trim(),
+      prioridad:             $('#tarea-prioridad').value,
+      es_cronologica:        esCronologica,
       etiquetas,
-      tiempo_estimado_horas:   $('#tarea-tiempo-estimado').value ? Number($('#tarea-tiempo-estimado').value) : null,
-      creador_id:              AGENTE.id,
-      agentes_ids:             agentesIds
+      tiempo_estimado_horas: $('#tarea-tiempo-estimado').value ? Number($('#tarea-tiempo-estimado').value) : null,
+      creador_id:            AGENTE.id,
+      agentes_ids:           agentesIds
     };
 
     if (esCronologica) {
-      datos.frecuencia    = $('#tarea-frecuencia').value;
-      datos.fecha_inicio  = new Date().toISOString();
+      datos.frecuencia   = $('#tarea-frecuencia').value;
+      datos.fecha_inicio = new Date().toISOString();
       if (datos.frecuencia === 'semanal')   datos.dias_semana = $$('.dia-semana:checked').map((c) => c.value);
       if (datos.frecuencia === 'mensual')   datos.dia_mes = Number($('#tarea-dia-mes').value) || 1;
       if (datos.frecuencia === 'quincenal') datos.dias_semana = [
@@ -547,8 +587,8 @@ function bind() {
         String(Number($('#tarea-dia-q2').value) || 30)
       ];
     } else {
-      datos.fecha_inicio  = $('#tarea-fecha-inicio').value || new Date().toISOString();
-      datos.fecha_cierre  = $('#tarea-fecha-cierre').value || null;
+      datos.fecha_inicio = $('#tarea-fecha-inicio').value || new Date().toISOString();
+      datos.fecha_cierre = $('#tarea-fecha-cierre').value || null;
     }
 
     try {
@@ -557,7 +597,6 @@ function bind() {
       toastExito('Tarea guardada.');
       formDirty = false;
       cerrarModal('modal-tarea');
-      // Refrescar proyectos globales por si se creó uno nuevo
       TODOS_PROYECTOS = await listarTodosLosProyectos();
       actualizarMsProyectos();
       cargarVista();
@@ -565,9 +604,7 @@ function bind() {
   });
 }
 
-/* ============================================================
-   INIT
-   ============================================================ */
+/* ============================================================ INIT */
 async function init() {
   renderLayout('tareas');
   const ctx = await inicializarApp();
@@ -583,7 +620,6 @@ async function init() {
 
   main.innerHTML = plantilla();
 
-  // Cargar datos base
   [EMPRESAS, TODOS_PROYECTOS] = await Promise.all([
     obtenerEmpresasDelAgente(AGENTE.id),
     listarTodosLosProyectos()
@@ -596,8 +632,6 @@ async function init() {
   llenarSelectorEmpresaModal(EMPRESA_ID);
   await cargarDatosModalEmpresa(EMPRESA_ID);
 
-  // ── Multiselects de toolbar ──────────────────────────────
-  // Agentes del toolbar (preselecciona usuario actual)
   msAgentes = crearMultiSelect({
     placeholder: 'Agentes',
     options: AGENTES_EMPRESA.map((a) => ({ value: a.agente.id, label: a.agente.nombre })),
@@ -609,11 +643,7 @@ async function init() {
   msEmpresas = crearMultiSelect({
     placeholder: 'Empresas',
     options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),
-    onChange() {
-      actualizarMsProyectos();
-      PAGINA = 0;
-      cargarVista();
-    }
+    onChange() { actualizarMsProyectos(); PAGINA = 0; cargarVista(); }
   });
   $('#slot-ms-empresas').appendChild(msEmpresas.el);
 
@@ -639,11 +669,9 @@ async function init() {
   });
   $('#slot-ms-prioridades').appendChild(msPrioridades.el);
 
-  // ── Bind y carga inicial ─────────────────────────────────
   bind();
   await cargarVista();
 
-  // QS: abrir modal nueva tarea con datos pre-cargados
   if (qs('nueva') === '1') {
     $('#modal-tarea-titulo').textContent = 'Nueva tarea';
     llenarSelectorEmpresaModal(EMPRESA_ID);

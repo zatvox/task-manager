@@ -370,9 +370,6 @@ export async function crearTarea(datos) {
   if (agentes_ids?.length) {
     await asignarAgentesATarea(data.id, agentes_ids);
   }
-  if (tareaData.es_cronologica) {
-    await crearRecordatorioDesdeTaskCronologica(data);
-  }
   return data;
 }
 
@@ -512,35 +509,59 @@ async function crearRecordatorioDesdeTaskCronologica(tarea) {
 }
 
 export async function listarRecordatorios(agenteId, filtros = {}) {
-  let query = supabase
+  const agIds = filtros.agente_ids?.length ? filtros.agente_ids : null;
+
+  /* ── Query 1: recordatorios puros (excluye filas bridge con tarea_id) ── */
+  let qRec = supabase
     .from('recordatorios_cronologicos')
     .select('*, empresa:empresas(nombre), proyecto:proyectos(nombre, color_etiqueta), asignados:agentes_recordatorios(agente:agentes(id, nombre, foto_url))')
+    .is('tarea_id', null)
     .order('created_at', { ascending: false });
 
-  // Filtro empresa
-  if (filtros.empresa_ids?.length) query = query.in('empresa_id', filtros.empresa_ids);
+  if (filtros.empresa_ids?.length) qRec = qRec.in('empresa_id', filtros.empresa_ids);
 
-  // Filtro agentes: busca en creador (agente_id) Y en asignados (agentes_recordatorios)
-  const agIds = filtros.agente_ids?.length ? filtros.agente_ids : null;
   if (agIds) {
     const { data: asig } = await supabase
-      .from('agentes_recordatorios')
-      .select('recordatorio_id')
-      .in('agente_id', agIds);
+      .from('agentes_recordatorios').select('recordatorio_id').in('agente_id', agIds);
     const asigIds = (asig ?? []).map((a) => a.recordatorio_id);
-
-    // Combina: creador está en agIds OR está asignado
     if (asigIds.length) {
-      query = query.or(`agente_id.in.(${agIds.join(',')}),id.in.(${asigIds.join(',')})`);
+      qRec = qRec.or(`agente_id.in.(${agIds.join(',')}),id.in.(${asigIds.join(',')})`);
     } else {
-      query = query.in('agente_id', agIds);
+      qRec = qRec.in('agente_id', agIds);
     }
   }
-  // Sin filtro de agente → RLS devuelve: creados por mí + asignados a mí
 
-  const { data, error } = await query;
-  manejarError('listarRecordatorios', error);
-  return data ?? [];
+  /* ── Query 2: tareas cronológicas ── */
+  let qTar = supabase
+    .from('tareas')
+    .select('id, titulo, empresa_id, empresa:empresas(nombre), proyecto_id, proyecto:proyectos(nombre, color_etiqueta), frecuencia, dias_semana, dia_mes, estado, created_at, asignados:agentes_tareas(agente:agentes(id, nombre, foto_url))')
+    .eq('es_cronologica', true)
+    .order('created_at', { ascending: false });
+
+  if (filtros.empresa_ids?.length) qTar = qTar.in('empresa_id', filtros.empresa_ids);
+
+  if (agIds) {
+    const { data: asigTar } = await supabase
+      .from('agentes_tareas').select('tarea_id').in('agente_id', agIds);
+    const tarIds = (asigTar ?? []).map((a) => a.tarea_id);
+    qTar = qTar.in('id', tarIds.length ? tarIds : ['00000000-0000-0000-0000-000000000000']);
+  }
+
+  const [{ data: recs, error: errRec }, { data: tareas, error: errTar }] = await Promise.all([qRec, qTar]);
+  manejarError('listarRecordatorios:recs', errRec);
+  manejarError('listarRecordatorios:tareas', errTar);
+
+  /* ── Normalizar tareas al mismo shape que recordatorios ── */
+  const tareasNorm = (tareas ?? []).map((t) => ({
+    ...t,
+    tipo: 'tarea',
+    hora_recordatorio: null,
+    agente_id: null
+  }));
+  const recsNorm = (recs ?? []).map((r) => ({ ...r, tipo: 'recordatorio' }));
+
+  /* ── Combinar y ordenar por fecha descendente ── */
+  return [...recsNorm, ...tareasNorm].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
 /** Sincroniza asignaciones de agentes para un recordatorio (delete + insert) */
@@ -813,4 +834,23 @@ export async function subirFotoPerfil(agenteId, file) {
   const { data } = supabase.storage.from('avatares').getPublicUrl(path);
   await actualizarPerfilAgente(agenteId, { foto_url: data.publicUrl });
   return data.publicUrl;
+}
+
+// ─── Kanban helpers ───────────────────────────────────────────────────────────
+/** Reemplaza TODOS los agentes asignados a una tarea (para drag kanban por Agente) */
+export async function reasignarAgentesATarea(tareaId, agenteIds = []) {
+  await supabase.from('agentes_tareas').delete().eq('tarea_id', tareaId);
+  if (!agenteIds.length) return;
+  const { error } = await supabase.from('agentes_tareas')
+    .insert(agenteIds.map((agente_id) => ({ tarea_id: tareaId, agente_id })));
+  manejarError('reasignarAgentesATarea', error);
+}
+
+/** Reemplaza TODOS los agentes de un recordatorio (para drag kanban por Agente) */
+export async function reasignarAgentesARecordatorio(recordatorioId, agenteIds = []) {
+  await supabase.from('agentes_recordatorios').delete().eq('recordatorio_id', recordatorioId);
+  if (!agenteIds.length) return;
+  const { error } = await supabase.from('agentes_recordatorios')
+    .insert(agenteIds.map((agente_id) => ({ recordatorio_id: recordatorioId, agente_id })));
+  manejarError('reasignarAgentesARecordatorio', error);
 }

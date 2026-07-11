@@ -1,18 +1,39 @@
 import { renderLayout } from './layout.js';
 import { inicializarApp, toastExito, toastError, confirmar } from './main.js';
 import {
-  obtenerTarea, actualizarTarea, eliminarTarea, asignarAgentesATarea, desasignarAgenteDeTarea,
-  listarProyectos, listarAgentesDeEmpresa, listarComentarios, crearComentario, eliminarComentario, listarHistorialTarea
+  obtenerTarea, actualizarTarea, eliminarTarea, asignarAgentesATarea,
+  listarProyectos, listarAgentesDeEmpresa, obtenerEmpresasDelAgente,
+  listarComentarios, crearComentario, eliminarComentario, listarHistorialTarea
 } from './supabase-data.js';
 import { $, $$, qs, escapeHTML, formatearFechaHora, iniciales, tiempoRelativo, ETIQUETAS_ESTADO, ETIQUETAS_PRIORIDAD } from './utils.js';
 
 const ESTADOS = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
 
+/* Recarga proyectos y agentes cuando cambia la empresa */
+async function recargarEmpresa(empresaId) {
+  const [proyectos, agentes] = await Promise.all([
+    listarProyectos(empresaId),
+    listarAgentesDeEmpresa(empresaId)
+  ]);
+
+  // Proyectos
+  $('#f-proyecto').innerHTML =
+    '<option value="">Sin proyecto</option>' +
+    proyectos.map((p) => `<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join('');
+
+  // Agentes
+  $('#lista-asignados').innerHTML = agentes.map((a) => `
+    <label class="checkbox-row" style="margin-bottom:var(--space-2);">
+      <input type="checkbox" class="check-asignado" value="${a.agente.id}" />
+      <div class="avatar">${iniciales(a.agente.nombre)}</div> ${escapeHTML(a.agente.nombre)}
+    </label>`).join('');
+}
+
 async function init() {
   renderLayout('tareas');
   const ctx = await inicializarApp();
   if (!ctx) return;
-  const { agente, empresaId } = ctx;
+  const { agente } = ctx;
   const tareaId = qs('id');
   const main = document.getElementById('main-content');
 
@@ -20,11 +41,18 @@ async function init() {
   const tarea = await obtenerTarea(tareaId);
   if (!tarea) { main.innerHTML = '<div class="empty-state"><h3>Tarea no encontrada.</h3></div>'; return; }
 
-  const [proyectos, agentesEmpresa, comentarios, { data: historial }] = await Promise.all([
-    listarProyectos(empresaId), listarAgentesDeEmpresa(empresaId), listarComentarios(tareaId), listarHistorialTarea(tareaId, 0, 30)
+  // Usa la empresa de la tarea, no la del contexto global
+  const tareaEmpresaId = tarea.empresa_id;
+
+  const [empresas, proyectos, agentesEmpresa, comentarios, { data: historial }] = await Promise.all([
+    obtenerEmpresasDelAgente(agente.id),
+    listarProyectos(tareaEmpresaId),
+    listarAgentesDeEmpresa(tareaEmpresaId),
+    listarComentarios(tareaId),
+    listarHistorialTarea(tareaId, 0, 30)
   ]);
 
-  const idsAsignados = new Set((tarea.asignados || []).map((a) => a.agente?.id));
+  const idsAsignados = new Set((tarea.asignados || []).map((a) => a.agente?.id).filter(Boolean));
 
   main.innerHTML = `
     <div class="breadcrumbs"><a href="tareas.html">Tareas</a><span class="sep">/</span><span class="current">${escapeHTML(tarea.titulo)}</span></div>
@@ -37,6 +65,12 @@ async function init() {
       <div class="card">
         <h3 style="margin-bottom:var(--space-4);">Información general</h3>
         <form id="form-tarea">
+          <div class="form-group">
+            <label class="form-label">Empresa</label>
+            <select class="form-control" id="f-empresa">
+              ${empresas.map((e) => `<option value="${e.id}" ${e.id === tareaEmpresaId ? 'selected' : ''}>${escapeHTML(e.nombre)}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-group"><label class="form-label">Título</label><input class="form-control" id="f-titulo" value="${escapeHTML(tarea.titulo)}" required /></div>
           <div class="form-group"><label class="form-label">Descripción</label><textarea class="form-control" id="f-descripcion">${escapeHTML(tarea.descripcion || '')}</textarea></div>
           <div class="form-row">
@@ -75,6 +109,9 @@ async function init() {
               <div class="avatar">${iniciales(a.agente.nombre)}</div> ${escapeHTML(a.agente.nombre)}
             </label>`).join('')}
         </div>
+        <p style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-top:var(--space-2);">
+          Al cambiar empresa, los agentes y proyectos disponibles se actualizan.
+        </p>
         <button class="btn btn-secondary btn-block" id="btn-guardar-asignados" style="margin-top:var(--space-3);">Actualizar asignados</button>
       </div>
     </div>
@@ -108,9 +145,15 @@ async function init() {
     </div>
   `;
 
+  // Cambio de empresa → recarga proyectos y agentes
+  $('#f-empresa').addEventListener('change', async (e) => {
+    await recargarEmpresa(e.target.value);
+  });
+
   $('#form-tarea').addEventListener('submit', async (e) => {
     e.preventDefault();
     const cambios = {
+      empresa_id: $('#f-empresa').value || tareaEmpresaId,
       titulo: $('#f-titulo').value.trim(),
       descripcion: $('#f-descripcion').value.trim(),
       proyecto_id: $('#f-proyecto').value || null,
