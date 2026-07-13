@@ -643,13 +643,25 @@ export async function eliminarRecordatorio(id) {
   manejarError('eliminarRecordatorio', error);
 }
 
-export async function obtenerInstanciasDelPeriodo(agenteId, desde, hasta) {
+export async function obtenerInstanciasDelPeriodo(agenteId, desde, hasta, agenteIds = []) {
+  const agentes = agenteIds.length ? agenteIds : [agenteId];
+
+  // Solo recordatorios que el agente tiene ASIGNADOS (no por ser creador)
+  const { data: asigRec } = await supabase
+    .from('agentes_recordatorios')
+    .select('recordatorio_id')
+    .in('agente_id', agentes);
+  const recIds = [...new Set((asigRec ?? []).map((r) => r.recordatorio_id))];
+
+  if (!recIds.length) return [];
+
   const { data, error } = await supabase
     .from('instancias_recordatorios')
-    .select('*, recordatorio:recordatorios_cronologicos!inner(titulo, descripcion, agente_id, hora_recordatorio, proyecto_id)')
-    .eq('recordatorio.agente_id', agenteId)
+    .select('*, recordatorio:recordatorios_cronologicos(titulo, descripcion, hora_recordatorio, proyecto_id)')
+    .in('recordatorio_id', recIds)
     .gte('fecha_programada', desde)
     .lte('fecha_programada', hasta);
+
   manejarError('obtenerInstanciasDelPeriodo', error);
   return data ?? [];
 }
@@ -666,38 +678,154 @@ export async function completarInstancia(id) {
 }
 
 /* ============================================================================
-   CALENDARIO (combina tareas puntuales + instancias de recordatorios)
+   CALENDARIO (combina tareas puntuales + tareas cronológicas + instancias de recordatorios)
    ============================================================================ */
 
-export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], agente_id, desde, hasta, soloMias = false, proyecto_ids = [] }) {
-  let queryTareas = supabase
+// Mapa nombre-día → getDay() index (domingo=0 en JS)
+const DOW_INDEX = { lunes:1, martes:2, miercoles:3, jueves:4, viernes:5, sabado:6, domingo:0 };
+
+/**
+ * Expande una tarea cronológica en eventos concretos dentro del período [desde, hasta].
+ * Respeta fecha_inicio como punto de partida mínimo.
+ */
+function expandirTareaCronologica(tarea, desde, hasta) {
+  const eventos = [];
+  const periodoInicio = new Date(desde);
+  const periodoFin    = new Date(hasta);
+  const tareaInicio   = tarea.fecha_inicio ? new Date(tarea.fecha_inicio) : periodoInicio;
+  const inicio = tareaInicio > periodoInicio ? tareaInicio : periodoInicio;
+
+  const base = {
+    tipo: 'tarea_cronologica',
+    id: tarea.id,
+    titulo: tarea.titulo,
+    estado: tarea.estado,
+    prioridad: tarea.prioridad,
+    color_proyecto: tarea.proyecto?.color_etiqueta,
+    proyecto_nombre: tarea.proyecto?.nombre,
+    vencida: false,
+    es_cronologica: true
+  };
+
+  switch (tarea.frecuencia) {
+
+    case 'diaria': {
+      const d = new Date(inicio); d.setHours(0, 0, 0, 0);
+      while (d <= periodoFin) {
+        eventos.push({ ...base, fecha: d.toISOString().slice(0, 10) });
+        d.setDate(d.getDate() + 1);
+      }
+      break;
+    }
+
+    case 'semanal': {
+      const diasObjetivo = (tarea.dias_semana ?? []).map((n) => DOW_INDEX[n]).filter((v) => v !== undefined);
+      if (!diasObjetivo.length) break;
+      const d = new Date(inicio); d.setHours(0, 0, 0, 0);
+      while (d <= periodoFin) {
+        if (diasObjetivo.includes(d.getDay())) {
+          eventos.push({ ...base, fecha: d.toISOString().slice(0, 10) });
+        }
+        d.setDate(d.getDate() + 1);
+      }
+      break;
+    }
+
+    case 'mensual': {
+      const diaObjetivo = tarea.dia_mes ?? 1;
+      // Empezar desde el mes de inicio, día objetivo
+      const d = new Date(inicio.getFullYear(), inicio.getMonth(), diaObjetivo);
+      d.setHours(0, 0, 0, 0);
+      // Si ya pasó en este mes (antes de inicio), saltar al siguiente mes
+      if (d < inicio) d.setMonth(d.getMonth() + 1);
+      while (d <= periodoFin) {
+        eventos.push({ ...base, fecha: d.toISOString().slice(0, 10) });
+        d.setMonth(d.getMonth() + 1);
+        d.setDate(diaObjetivo); // fuerza el día (setMonth puede cambiar el día si el mes es corto)
+      }
+      break;
+    }
+
+    case 'quincenal': {
+      // dias_semana guarda los dos días del mes, ej: [15, 30]
+      const dias = (tarea.dias_semana ?? ['15', '30']).map(Number).filter((v) => !isNaN(v));
+      if (!dias.length) break;
+      // Iterar mes a mes dentro del período
+      const mesInicio = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
+      while (mesInicio <= periodoFin) {
+        for (const dia of dias) {
+          const fecha = new Date(mesInicio.getFullYear(), mesInicio.getMonth(), dia);
+          fecha.setHours(0, 0, 0, 0);
+          if (fecha >= inicio && fecha <= periodoFin) {
+            eventos.push({ ...base, fecha: fecha.toISOString().slice(0, 10) });
+          }
+        }
+        mesInicio.setMonth(mesInicio.getMonth() + 1);
+      }
+      break;
+    }
+  }
+
+  return eventos;
+}
+
+export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], agente_id, agente_ids = [], desde, hasta, proyecto_ids = [] }) {
+  // ── IDs de tareas asignadas al agente (para puntuales y cronológicas) ────────
+  const filtroAgentes = agente_ids.length ? agente_ids : (agente_id ? [agente_id] : []);
+  let tareaIdsAsignadas = null; // null = sin filtro de agente
+
+  if (filtroAgentes.length) {
+    const { data: asig } = await supabase.from('agentes_tareas').select('tarea_id').in('agente_id', filtroAgentes);
+    tareaIdsAsignadas = (asig ?? []).map((t) => t.tarea_id);
+  }
+
+  const NULL_ID = '00000000-0000-0000-0000-000000000000';
+
+  // ── Tareas PUNTUALES (tienen fecha_cierre) ────────────────────────────────────
+  let qPuntuales = supabase
     .from('tareas')
     .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, fecha_inicio, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
+    .eq('es_cronologica', false)
     .not('fecha_cierre', 'is', null)
     .gte('fecha_cierre', desde)
     .lte('fecha_cierre', hasta);
 
-  // Filtro empresa: array tiene prioridad, luego single, luego RLS (todas las empresas del usuario)
-  if (empresa_ids.length) queryTareas = queryTareas.in('empresa_id', empresa_ids);
-  else if (empresa_id) queryTareas = queryTareas.eq('empresa_id', empresa_id);
-
-  // Filtro por proyectos seleccionados
-  if (proyecto_ids.length) {
-    queryTareas = queryTareas.in('proyecto_id', proyecto_ids);
+  if (empresa_ids.length) qPuntuales = qPuntuales.in('empresa_id', empresa_ids);
+  else if (empresa_id)    qPuntuales = qPuntuales.eq('empresa_id', empresa_id);
+  if (proyecto_ids.length) qPuntuales = qPuntuales.in('proyecto_id', proyecto_ids);
+  if (tareaIdsAsignadas !== null) {
+    qPuntuales = qPuntuales.in('id', tareaIdsAsignadas.length ? tareaIdsAsignadas : [NULL_ID]);
   }
 
-  if (soloMias && agente_id) {
-    const { data: misTareasIds } = await supabase.from('agentes_tareas').select('tarea_id').eq('agente_id', agente_id);
-    const ids = (misTareasIds ?? []).map((t) => t.tarea_id);
-    queryTareas = queryTareas.in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+  // ── Tareas CRONOLÓGICAS (para expandir en cliente) ────────────────────────────
+  let qCronologicas = supabase
+    .from('tareas')
+    .select('id, titulo, estado, prioridad, frecuencia, fecha_inicio, dias_semana, dia_mes, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
+    .eq('es_cronologica', true);
+
+  if (empresa_ids.length) qCronologicas = qCronologicas.in('empresa_id', empresa_ids);
+  else if (empresa_id)    qCronologicas = qCronologicas.eq('empresa_id', empresa_id);
+  if (proyecto_ids.length) qCronologicas = qCronologicas.in('proyecto_id', proyecto_ids);
+  if (tareaIdsAsignadas !== null) {
+    qCronologicas = qCronologicas.in('id', tareaIdsAsignadas.length ? tareaIdsAsignadas : [NULL_ID]);
   }
 
-  const { data: tareas, error: errTareas } = await queryTareas;
-  manejarError('obtenerEventosCalendario:tareas', errTareas);
+  // ── Ejecutar queries en paralelo ──────────────────────────────────────────────
+  const [
+    { data: tareasPuntuales, error: errPunt },
+    { data: tareasCronologicas, error: errCron },
+    instancias
+  ] = await Promise.all([
+    qPuntuales,
+    qCronologicas,
+    agente_id ? obtenerInstanciasDelPeriodo(agente_id, desde, hasta, agente_ids) : Promise.resolve([])
+  ]);
 
-  const instancias = agente_id ? await obtenerInstanciasDelPeriodo(agente_id, desde, hasta) : [];
+  manejarError('obtenerEventosCalendario:puntuales', errPunt);
+  manejarError('obtenerEventosCalendario:cronologicas', errCron);
 
-  const eventosTareas = (tareas ?? []).map((t) => ({
+  // ── Mapear tareas puntuales ───────────────────────────────────────────────────
+  const eventosPuntuales = (tareasPuntuales ?? []).map((t) => ({
     tipo: 'tarea',
     id: t.id,
     titulo: t.titulo,
@@ -709,6 +837,12 @@ export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], a
     vencida: new Date(t.fecha_cierre) < new Date() && t.estado !== 'completado'
   }));
 
+  // ── Expandir tareas cronológicas en eventos concretos ────────────────────────
+  const eventosCronologicas = (tareasCronologicas ?? []).flatMap((t) =>
+    expandirTareaCronologica(t, desde, hasta)
+  );
+
+  // ── Mapear instancias de recordatorios ────────────────────────────────────────
   const eventosInstancias = (instancias ?? []).map((i) => ({
     tipo: 'recordatorio',
     id: i.id,
@@ -720,7 +854,7 @@ export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], a
     estado_instancia: i.estado
   }));
 
-  return [...eventosTareas, ...eventosInstancias];
+  return [...eventosPuntuales, ...eventosCronologicas, ...eventosInstancias];
 }
 
 /* ============================================================================

@@ -16,9 +16,10 @@ let TODOS_PROYECTOS  = [];
 let msEmpresas, msAgentes;
 let formDirty = false;
 
-let VISTA      = 'tabla';      // 'tabla' | 'kanban'
-let AGRUPACION = 'frecuencia'; // 'frecuencia' | 'empresa' | 'proyecto' | 'agente'
-let ITEMS_CACHE = [];
+let VISTA        = 'tabla';      // 'tabla' | 'kanban'
+let AGRUPACION   = 'frecuencia'; // 'frecuencia' | 'empresa' | 'proyecto' | 'agente'
+let FILTRO_TIPO  = 'todos';      // 'todos' | 'tarea' | 'recordatorio'
+let ITEMS_CACHE  = [];
 
 const DIAS_SEMANA = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
 const FRECUENCIAS = ['diaria','semanal','mensual','quincenal'];
@@ -45,6 +46,11 @@ function plantilla() {
     <div class="table-toolbar" style="flex-wrap:wrap; gap:var(--space-2);">
       <div id="slot-ms-empresas-rec"></div>
       <div id="slot-ms-agentes-rec"></div>
+      <div style="display:flex; gap:var(--space-1);">
+        <button class="btn btn-sm ${FILTRO_TIPO==='todos'       ?'btn-primary':'btn-secondary'}" data-tipo="todos">Todos</button>
+        <button class="btn btn-sm ${FILTRO_TIPO==='tarea'       ?'btn-primary':'btn-secondary'}" data-tipo="tarea">🔁 Tareas</button>
+        <button class="btn btn-sm ${FILTRO_TIPO==='recordatorio'?'btn-primary':'btn-secondary'}" data-tipo="recordatorio">📌 Recordatorios</button>
+      </div>
       <div class="tabs" style="border-bottom:none; margin:0; margin-left:auto;">
         <div class="tab ${VISTA==='tabla'?'active':''}" data-vista="tabla">📋 Tabla</div>
         <div class="tab ${VISTA==='kanban'?'active':''}" data-vista="kanban">🗂️ Kanban</div>
@@ -341,11 +347,14 @@ async function cargar() {
     TODOS_PROYECTOS = await listarTodosLosProyectos().catch(() => []);
   }
 
+  // Aplicar filtro de tipo
+  const listaFiltrada = FILTRO_TIPO === 'todos' ? lista : lista.filter((r) => r.tipo === FILTRO_TIPO);
+
   const cont = document.getElementById('contenedor-rec');
   if (VISTA === 'tabla') {
-    await cargarTabla(lista);
+    await cargarTabla(listaFiltrada);
   } else {
-    renderKanbanRec(cont, lista);
+    renderKanbanRec(cont, listaFiltrada);
   }
 }
 
@@ -425,6 +434,17 @@ function bind() {
   });
   $('#form-recordatorio').addEventListener('input',  () => { formDirty = true; });
   $('#form-recordatorio').addEventListener('change', () => { formDirty = true; });
+
+  // Filtro de tipo (Todos / Tareas / Recordatorios)
+  $$('.btn[data-tipo]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      FILTRO_TIPO = btn.dataset.tipo;
+      $$('.btn[data-tipo]').forEach((b) => {
+        b.classList.toggle('btn-primary',   b === btn);
+        b.classList.toggle('btn-secondary', b !== btn);
+      });
+      cargar();
+    }));
 
   // Toggle vista
   $$('.tab[data-vista]').forEach((tab) =>

@@ -3,7 +3,8 @@ import { inicializarApp, toastExito, toastError } from './main.js';
 import {
   obtenerEventosCalendario, moverTarea, obtenerTarea, completarInstancia,
   listarComentarios, crearComentario, cambiarEstadoTarea,
-  listarHistorialTarea, obtenerEmpresasDelAgente, listarTodosLosProyectos
+  listarHistorialTarea, obtenerEmpresasDelAgente, listarTodosLosProyectos,
+  listarAgentesDeEmpresa
 } from './supabase-data.js';
 import {
   $, $$, escapeHTML, formatearFecha, formatearHora, iniciales,
@@ -20,14 +21,16 @@ let estado = {
   vista: 'mensual',
   fecha: new Date(),
   indicador: cacheLocal.get(CONFIG.STORAGE_KEYS.INDICADOR_CALENDARIO) || 'prioridad',
-  soloMias: false,
   proyectoIds: [],   // [] = todos los proyectos
-  empresaIds: []     // [] = todas las empresas del usuario
+  empresaIds: [],    // [] = todas las empresas del usuario
+  agenteIds: []      // [] = [AGENTE_ID] por defecto, editable por el usuario
 };
 
 // Instancias de multiselect
 let msProyectos = null;
 let msEmpresas  = null;
+let msAgentes   = null;
+let AGENTES_CAL = [];
 
 /* ============================================================
    PLANTILLA
@@ -59,9 +62,7 @@ function plantilla() {
       <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
         <div id="slot-filtro-empresas-cal"></div>
         <div id="slot-filtro-proyectos"></div>
-        <label class="checkbox-row" style="white-space:nowrap;">
-          <input type="checkbox" id="chk-solo-mias" /> Solo mis tareas
-        </label>
+        <div id="slot-filtro-agentes-cal"></div>
         <select class="form-control" id="select-indicador" style="max-width:190px;">
           <option value="prioridad">Color por prioridad</option>
           <option value="estado">Color por estado</option>
@@ -119,11 +120,11 @@ function inicioSemana(d) {
    ============================================================ */
 async function cargarEventos(desde, hasta) {
   return obtenerEventosCalendario({
-    empresa_ids: estado.empresaIds,   // [] = todas las empresas (RLS)
+    empresa_ids: estado.empresaIds,
     agente_id: AGENTE_ID,
+    agente_ids: estado.agenteIds,
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
-    soloMias: estado.soloMias,
     proyecto_ids: estado.proyectoIds
   });
 }
@@ -133,11 +134,12 @@ async function cargarEventos(desde, hasta) {
    ============================================================ */
 function renderChip(e) {
   const titulo = e.titulo || '(Sin título)';
-  const prefix = e.tipo === 'recordatorio' ? '🔁 ' : '';
+  const prefix = e.tipo === 'recordatorio' ? '🔔 ' : e.tipo === 'tarea_cronologica' ? '🔁 ' : '';
+  const draggable = e.tipo === 'tarea';
   return `<div class="evento-chip ${e.vencida ? 'vencida' : ''}"
     style="border-left-color:${colorEvento(e)};"
     data-evento='${JSON.stringify(e).replace(/'/g, "&#39;")}'
-    draggable="${e.tipo === 'tarea' ? 'true' : 'false'}"
+    draggable="${draggable}"
     title="${escapeHTML(titulo)}"
   >${prefix}${escapeHTML(titulo)}</div>`;
 }
@@ -446,6 +448,19 @@ async function cargarProyectosMs(empresaIds) {
   } catch (_) { /* sin proyectos */ }
 }
 
+async function cargarAgentesMs(empresaIds) {
+  try {
+    const emps = empresaIds.length ? EMPRESAS.filter((e) => empresaIds.includes(e.id)) : EMPRESAS;
+    const listas = await Promise.all(emps.map((e) => listarAgentesDeEmpresa(e.id).catch(() => [])));
+    const mapaAgentes = new Map();
+    listas.flat().forEach((row) => {
+      if (row.agente?.id) mapaAgentes.set(row.agente.id, row.agente.nombre);
+    });
+    AGENTES_CAL = [...mapaAgentes.entries()].map(([id, nombre]) => ({ id, nombre }));
+    msAgentes?.setOptions(AGENTES_CAL.map((a) => ({ value: a.id, label: a.nombre })));
+  } catch (_) { /* sin agentes */ }
+}
+
 async function bind() {
   // Navegación
   $('#btn-prev').addEventListener('click', () => navegar(-1));
@@ -466,12 +481,6 @@ async function bind() {
     if (!ok) return;
     try { await eliminarTarea(id); toastExito('Tarea eliminada.'); cerrarPanel(); renderVistaActual(); }
     catch (err) { toastError(err.message); }
-  });
-
-  // Solo mis tareas
-  $('#chk-solo-mias').addEventListener('change', (e) => {
-    estado.soloMias = e.target.checked;
-    renderVistaActual();
   });
 
   // Color indicador
@@ -503,8 +512,8 @@ async function bind() {
     options: EMPRESAS.map((e) => ({ value: e.id, label: e.nombre })),
     onChange(ids) {
       estado.empresaIds = ids;
-      // Recarga proyectos según empresas seleccionadas
       cargarProyectosMs(ids);
+      cargarAgentesMs(ids);
       renderVistaActual();
     }
   });
@@ -521,8 +530,22 @@ async function bind() {
   });
   $('#slot-filtro-proyectos').appendChild(msProyectos.el);
 
-  // Cargar todos los proyectos accesibles (RLS filtra por empresa del usuario)
+  // ── MultiSelect de agentes ────────────────────────────────
+  msAgentes = crearMultiSelect({
+    placeholder: 'Agentes',
+    options: [],
+    onChange(ids) {
+      estado.agenteIds = ids;
+      renderVistaActual();
+    }
+  });
+  $('#slot-filtro-agentes-cal').appendChild(msAgentes.el);
+
+  // Cargar proyectos y agentes iniciales; pre-seleccionar el agente actual
   await cargarProyectosMs([]);
+  await cargarAgentesMs([]);
+  estado.agenteIds = [AGENTE_ID];
+  msAgentes.setSelected([AGENTE_ID]);
 }
 
 /* ============================================================

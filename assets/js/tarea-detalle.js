@@ -207,7 +207,7 @@ async function init() {
     cambios.es_cronologica = esCronologica;
     if (esCronologica) {
       cambios.frecuencia   = $('#f-frecuencia').value;
-      cambios.fecha_inicio = null;
+      cambios.fecha_inicio = tarea.fecha_inicio || new Date().toISOString().slice(0,10);
       cambios.fecha_cierre = null;
       if (cambios.frecuencia === 'semanal') {
         cambios.dias_semana = $$('.check-dia-semana:checked').map(c => Number(c.value));
