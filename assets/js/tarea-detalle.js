@@ -97,6 +97,10 @@ async function init() {
                 <div class="form-group"><label class="form-label">Fecha de inicio</label><input class="form-control" type="date" id="f-fecha-inicio" value="${tarea.fecha_inicio ? tarea.fecha_inicio.slice(0,10) : ''}" /></div>
                 <div class="form-group"><label class="form-label">Fecha de cierre</label><input class="form-control" type="date" id="f-fecha-cierre" value="${tarea.fecha_cierre ? tarea.fecha_cierre.slice(0,10) : ''}" /></div>
               </div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">Hora de recordatorio</label><input class="form-control" type="time" id="f-hora-recordatorio-puntual" value="${tarea.hora_recordatorio ? tarea.hora_recordatorio.slice(0,5) : ''}" /></div>
+                <div class="form-group" style="visibility:hidden;"></div>
+              </div>
             </div>
             <div id="bloque-cronologico" style="${!tarea.es_cronologica ? 'display:none;' : ''}">
               <div class="form-row">
@@ -115,6 +119,10 @@ async function init() {
               </div>
               <div id="bloque-dia-mes" style="${['mensual','quincenal'].includes(tarea.frecuencia||'') ? '' : 'display:none;'}">
                 <div class="form-group"><label class="form-label">Día del mes</label><input class="form-control" type="number" id="f-dia-mes" min="1" max="31" value="${tarea.dia_mes ?? ''}" /></div>
+              </div>
+              <div class="form-row" style="margin-top:var(--space-3);">
+                <div class="form-group"><label class="form-label">Hora de recordatorio</label><input class="form-control" type="time" id="f-hora-recordatorio-crono" value="${tarea.hora_recordatorio ? tarea.hora_recordatorio.slice(0,5) : ''}" /></div>
+                <div class="form-group" style="visibility:hidden;"></div>
               </div>
             </div>
           </div>
@@ -219,12 +227,14 @@ async function init() {
         cambios.dias_semana = null;
         cambios.dia_mes     = null;
       }
+      cambios.hora_recordatorio = $('#f-hora-recordatorio-crono').value || null;
     } else {
-      cambios.fecha_inicio = $('#f-fecha-inicio').value || null;
-      cambios.fecha_cierre = $('#f-fecha-cierre').value || null;
-      cambios.frecuencia   = null;
-      cambios.dias_semana  = null;
-      cambios.dia_mes      = null;
+      cambios.fecha_inicio       = $('#f-fecha-inicio').value || null;
+      cambios.fecha_cierre       = $('#f-fecha-cierre').value || null;
+      cambios.frecuencia         = null;
+      cambios.dias_semana        = null;
+      cambios.dia_mes            = null;
+      cambios.hora_recordatorio  = $('#f-hora-recordatorio-puntual').value || null;
     }
     if (cambios.estado === 'completado') cambios.completado_por = agente.id;
     try { await actualizarTarea(tareaId, cambios); toastExito('Tarea actualizada.'); }

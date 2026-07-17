@@ -140,6 +140,27 @@ ul, ol { list-style: none; }
 
 .topbar__actions { display: flex; align-items: center; gap: var(--space-3); }
 
+/* Tipo de cambio widget */
+.topbar__tipo-cambio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  margin-right: var(--space-3);
+}
+.topbar__tipo-cambio .tc-label { color: var(--text-tertiary); font-weight: 700; letter-spacing: .3px; }
+.topbar__tipo-cambio .tc-sublabel { color: var(--text-tertiary); font-size: 10px; margin-right: 2px; }
+.topbar__tipo-cambio .tc-grupo { display: flex; align-items: baseline; gap: 1px; }
+.topbar__tipo-cambio .tc-compra { color: #22c55e; font-weight: 600; }
+.topbar__tipo-cambio .tc-venta  { color: #f87171; font-weight: 600; }
+.topbar__tipo-cambio .tc-sep    { color: var(--border-subtle); }
+@media (max-width: 640px) { .topbar__tipo-cambio { display: none; } }
+
 .main-content { padding: var(--space-6); max-width: 1440px; }
 
 .page-header {

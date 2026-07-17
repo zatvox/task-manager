@@ -4,7 +4,7 @@ import {
   obtenerEventosCalendario, moverTarea, obtenerTarea, completarInstancia,
   listarComentarios, crearComentario, cambiarEstadoTarea,
   listarHistorialTarea, obtenerEmpresasDelAgente, listarTodosLosProyectos,
-  listarAgentesDeEmpresa
+  listarAgentesDeEmpresa, asignarAgentesATarea, desasignarAgenteDeTarea
 } from './supabase-data.js';
 import {
   $, $$, escapeHTML, formatearFecha, formatearHora, iniciales,
@@ -118,13 +118,17 @@ function inicioSemana(d) {
 /* ============================================================
    CARGA DE EVENTOS
    ============================================================ */
+function fechaLocalStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 async function cargarEventos(desde, hasta) {
   return obtenerEventosCalendario({
     empresa_ids: estado.empresaIds,
     agente_id: AGENTE_ID,
     agente_ids: estado.agenteIds,
-    desde: desde.toISOString(),
-    hasta: hasta.toISOString(),
+    desde: fechaLocalStr(desde),
+    hasta: fechaLocalStr(hasta),
     proyecto_ids: estado.proyectoIds
   });
 }
@@ -134,14 +138,15 @@ async function cargarEventos(desde, hasta) {
    ============================================================ */
 function renderChip(e) {
   const titulo = e.titulo || '(Sin título)';
-  const prefix = e.tipo === 'recordatorio' ? '🔔 ' : e.tipo === 'tarea_cronologica' ? '🔁 ' : '';
+  const prefix = e.tipo === 'recordatorio' ? '🔁 ' : '';
   const draggable = e.tipo === 'tarea';
+  const horaLabel = e.hora ? `<span style="font-size:10px; opacity:.7; margin-right:3px;">${e.hora}</span>` : '';
   return `<div class="evento-chip ${e.vencida ? 'vencida' : ''}"
     style="border-left-color:${colorEvento(e)};"
     data-evento='${JSON.stringify(e).replace(/'/g, "&#39;")}'
     draggable="${draggable}"
-    title="${escapeHTML(titulo)}"
-  >${prefix}${escapeHTML(titulo)}</div>`;
+    title="${escapeHTML(titulo)}${e.hora ? ' · ' + e.hora : ''}"
+  >${horaLabel}${prefix}${escapeHTML(titulo)}</div>`;
 }
 
 /* ============================================================
@@ -196,23 +201,27 @@ async function renderSemanal() {
   const hasta = new Date(dias[6]); hasta.setHours(23, 59, 59);
   const eventos = await cargarEventos(dias[0], hasta);
 
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
   cont.innerHTML = `<div class="semana-grid">${dias.map((d) => {
     const clave = d.toISOString().slice(0, 10);
+    const esHoy = d.getTime() === hoy.getTime();
     const eventosDia = eventos
       .filter((e) => e.fecha?.slice(0, 10) === clave)
-      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    return `<div class="dia-columna" data-fecha="${clave}">
-      <div style="font-weight:700; font-size:var(--fs-sm); margin-bottom:var(--space-2); text-align:center;">
+      .sort((a, b) => (a.hora || '99:99').localeCompare(b.hora || '99:99'));
+    return `<div class="dia-columna ${esHoy ? 'hoy' : ''}" data-fecha="${clave}">
+      <div style="font-weight:700; font-size:var(--fs-sm); margin-bottom:var(--space-2); text-align:center; ${esHoy ? 'color:var(--color-accent);' : ''}">
         ${DOW[(d.getDay() + 6) % 7]} ${d.getDate()}
       </div>
-      ${eventosDia.map((e) => `
-        <div class="evento-chip ${e.vencida ? 'vencida' : ''}"
+      ${eventosDia.map((e) => {
+        const prefix = e.tipo === 'recordatorio' ? '🔁 ' : '';
+        const horaStr = e.hora ? `<span style="font-size:10px; opacity:.7; display:block;">${e.hora}</span>` : '';
+        return `<div class="evento-chip ${e.vencida ? 'vencida' : ''}"
           style="display:block; margin-bottom:4px; border-left-color:${colorEvento(e)};"
           draggable="${e.tipo === 'tarea' ? 'true' : 'false'}"
           data-evento='${JSON.stringify(e).replace(/'/g, "&#39;")}'
-          title="${escapeHTML(e.titulo || '')}"
-        >${e.hora ? formatearHora(e.hora) + ' · ' : ''}${escapeHTML(e.titulo || '')}</div>
-      `).join('') || '<p style="font-size:11px; color:var(--text-tertiary); text-align:center;">Sin eventos</p>'}
+          title="${escapeHTML(e.titulo || '')}${e.hora ? ' · ' + e.hora : ''}"
+        >${horaStr}${prefix}${escapeHTML(e.titulo || '')}</div>`;
+      }).join('') || '<p style="font-size:11px; color:var(--text-tertiary); text-align:center;">Sin eventos</p>'}
     </div>`;
   }).join('')}</div>`;
 
@@ -230,23 +239,38 @@ async function renderDiaria() {
   const hasta = new Date(d); hasta.setHours(23, 59, 59);
   const eventos = await cargarEventos(desde, hasta);
 
-  cont.innerHTML = `<div class="card">${Array.from({ length: 24 }, (_, h) => {
-    const eventosHora = eventos.filter((e) => {
-      const hora = e.hora ? Number(e.hora.split(':')[0]) : new Date(e.fecha).getHours();
-      return hora === h;
-    });
-    return `<div class="hora-fila">
-      <div class="hora-label">${String(h).padStart(2, '0')}:00</div>
-      <div style="display:flex; flex-direction:column; gap:4px; padding:var(--space-2) 0;">
-        ${eventosHora.map((e) => `
-          <div class="evento-chip ${e.vencida ? 'vencida' : ''}"
-            style="display:block; border-left-color:${colorEvento(e)};"
-            data-evento='${JSON.stringify(e).replace(/'/g, "&#39;")}'
-          >${escapeHTML(e.titulo || '')}${e.descripcion ? ' — ' + escapeHTML(e.descripcion) : ''}</div>
-        `).join('')}
-      </div>
-    </div>`;
-  }).join('')}</div>`;
+  // Separar eventos con hora y sin hora
+  const sinHora = eventos.filter((e) => !e.hora);
+  const conHora = eventos.filter((e) => !!e.hora);
+
+  const renderChipDiaria = (e) => {
+    const prefix = e.tipo === 'recordatorio' ? '🔁 ' : '';
+    return `<div class="evento-chip ${e.vencida ? 'vencida' : ''}"
+      style="display:block; border-left-color:${colorEvento(e)};"
+      data-evento='${JSON.stringify(e).replace(/'/g, "&#39;")}'
+      title="${escapeHTML(e.titulo || '')}${e.hora ? ' · ' + e.hora : ''}"
+    >${prefix}${escapeHTML(e.titulo || '')}</div>`;
+  };
+
+  cont.innerHTML = `<div class="card">
+    ${sinHora.length ? `
+      <div class="hora-fila" style="background:var(--bg-surface-raised); border-radius:var(--radius-sm); margin-bottom:var(--space-2);">
+        <div class="hora-label" style="color:var(--text-tertiary); font-size:10px;">Todo el día</div>
+        <div style="display:flex; flex-direction:column; gap:4px; padding:var(--space-2) 0;">
+          ${sinHora.map(renderChipDiaria).join('')}
+        </div>
+      </div>` : ''}
+    ${Array.from({ length: 24 }, (_, h) => {
+      const eventosHora = conHora.filter((e) => Number(e.hora.split(':')[0]) === h);
+      const tieneEventos = eventosHora.length > 0;
+      return `<div class="hora-fila" style="${tieneEventos ? 'background:var(--bg-surface-raised);' : ''}">
+        <div class="hora-label">${String(h).padStart(2, '0')}:00</div>
+        <div style="display:flex; flex-direction:column; gap:4px; padding:var(--space-1) 0;">
+          ${eventosHora.map(renderChipDiaria).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
 
   habilitarClicksEventos();
 }
@@ -318,6 +342,10 @@ async function abrirDetalle(evento) {
     btnElim.style.display = '';
     btnElim.dataset.id = evento.id;
 
+    // Agentes disponibles para agregar (excluye ya asignados)
+    const yaAsignadosIds = new Set((tarea.asignados || []).map((a) => a.agente?.id));
+    const agentesDisponibles = AGENTES_CAL.filter((a) => !yaAsignadosIds.has(a.id));
+
     $('#cal-panel-body').innerHTML = `
       <div class="form-group">
         <label class="form-label">Estado</label>
@@ -327,18 +355,42 @@ async function abrirDetalle(evento) {
           ).join('')}
         </select>
       </div>
+
+      <div class="form-group">
+        <label class="form-label">Fecha de cierre</label>
+        <input type="date" class="form-control" id="cal-fecha-cierre"
+          value="${tarea.fecha_cierre?.slice(0,10) || ''}"
+          style="max-width:180px;" />
+      </div>
+
       <p>
         <span class="badge badge-prioridad-${tarea.prioridad}">${ETIQUETAS_PRIORIDAD[tarea.prioridad]}</span>
         ${tarea.es_cronologica ? '<span class="badge badge-estado-en_progreso" style="margin-left:4px;">🔁 Cronológica</span>' : ''}
+        ${tarea.hora_recordatorio ? `<span style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-left:var(--space-2);">⏰ ${tarea.hora_recordatorio.slice(0,5)}</span>` : ''}
       </p>
       <p style="font-size:var(--fs-sm); color:var(--text-secondary); margin:var(--space-3) 0;">${escapeHTML(tarea.descripcion || 'Sin descripción.')}</p>
-      <p style="font-size:var(--fs-xs); color:var(--text-tertiary);">
-        Inicio: ${formatearFecha(tarea.fecha_inicio)} ${tarea.fecha_cierre ? '· Cierre: ' + formatearFecha(tarea.fecha_cierre) : ''}
-      </p>
+
       <div style="margin:var(--space-3) 0;">
-        <strong style="font-size:var(--fs-sm);">Asignados:</strong>
-        ${avataresAsignados(tarea.asignados)}
+        <strong style="font-size:var(--fs-sm); display:block; margin-bottom:var(--space-2);">Asignados</strong>
+        <div id="cal-asignados-list">
+          ${(tarea.asignados || []).map((a) => `
+            <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-2);">
+              <div class="avatar" style="width:28px; height:28px; font-size:10px;">${iniciales(a.agente?.nombre || '?')}</div>
+              <span style="font-size:var(--fs-sm); flex:1;">${escapeHTML(a.agente?.nombre || '')}</span>
+              <button class="btn btn-icon" style="font-size:11px; color:var(--color-danger, #f87171);"
+                data-remove-asignado="${a.id}" title="Quitar agente">✕</button>
+            </div>`).join('') || '<p style="font-size:var(--fs-sm); color:var(--text-tertiary);">Sin asignados.</p>'}
+        </div>
+        ${agentesDisponibles.length ? `
+        <div style="display:flex; gap:var(--space-2); margin-top:var(--space-2);">
+          <select class="form-control" id="cal-agregar-agente" style="font-size:var(--fs-sm);">
+            <option value="">Agregar agente…</option>
+            ${agentesDisponibles.map((a) => `<option value="${a.id}">${escapeHTML(a.nombre)}</option>`).join('')}
+          </select>
+          <button class="btn btn-secondary btn-sm" id="cal-btn-add-agente" style="white-space:nowrap;">+ Agregar</button>
+        </div>` : ''}
       </div>
+
       <div style="margin:var(--space-3) 0; display:flex; flex-wrap:wrap; gap:var(--space-1);">
         ${(tarea.etiquetas || []).map((e) => `<span class="badge badge-estado-archivado">${escapeHTML(e)}</span>`).join('')}
       </div>
@@ -374,6 +426,46 @@ async function abrirDetalle(evento) {
       toastExito('Estado actualizado.');
       renderVistaActual();
     });
+
+    // Editar fecha de cierre
+    $('#cal-fecha-cierre').addEventListener('change', async (e) => {
+      const nuevaFecha = e.target.value;
+      if (!nuevaFecha) return;
+      await moverTarea(evento.id, nuevaFecha);
+      toastExito('Fecha de cierre actualizada.');
+      renderVistaActual();
+    });
+
+    // Quitar agente asignado
+    $$('[data-remove-asignado]').forEach((btn) =>
+      btn.addEventListener('click', async () => {
+        try {
+          await desasignarAgenteDeTarea(btn.dataset.removeAsignado);
+          toastExito('Agente removido.');
+          // Refrescar panel con datos actualizados
+          const tareaActualizada = await obtenerTarea(evento.id);
+          evento._tarea = tareaActualizada;
+          abrirDetalle(evento);
+          renderVistaActual();
+        } catch (err) { toastError(err.message); }
+      })
+    );
+
+    // Agregar agente
+    $('#cal-btn-add-agente')?.addEventListener('click', async () => {
+      const sel = $('#cal-agregar-agente');
+      const agenteId = sel?.value;
+      if (!agenteId) return;
+      try {
+        await asignarAgentesATarea(evento.id, [agenteId]);
+        toastExito('Agente asignado.');
+        const tareaActualizada = await obtenerTarea(evento.id);
+        evento._tarea = tareaActualizada;
+        abrirDetalle(evento);
+        renderVistaActual();
+      } catch (err) { toastError(err.message); }
+    });
+
     $('#cal-form-comentario').addEventListener('submit', async (e) => {
       e.preventDefault();
       const texto = $('#cal-input-comentario').value.trim();
@@ -383,25 +475,28 @@ async function abrirDetalle(evento) {
     });
 
   } else {
-    // Recordatorio
-    $('#cal-editar-link').href = 'recordatorios.html';
+    // Instancia de recordatorio / tarea cronológica
+    const tareaId = evento.tarea_id;
+    $('#cal-editar-link').href = tareaId ? `tarea-detalle.html?id=${tareaId}` : 'recordatorios.html';
+    $('#cal-editar-link').textContent = tareaId ? 'Ver tarea' : 'Ver recordatorios';
     $('#cal-eliminar-btn').style.display = 'none';
+    const yaCompletado = evento.estado_instancia === 'completado';
     $('#cal-panel-body').innerHTML = `
-      <p style="font-size:var(--fs-sm); color:var(--text-secondary);">${escapeHTML(evento.descripcion || '')}</p>
-      <p style="font-size:var(--fs-xs); color:var(--text-tertiary);">
-        Programado: ${formatearFecha(evento.fecha)} ${evento.hora ? formatearHora(evento.hora) : ''}
+      ${evento.descripcion ? `<p style="font-size:var(--fs-sm); color:var(--text-secondary); margin-bottom:var(--space-3);">${escapeHTML(evento.descripcion)}</p>` : ''}
+      <p style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-bottom:var(--space-3);">
+        🔁 Cronológica &nbsp;·&nbsp; 📅 ${formatearFecha(evento.fecha)}${evento.hora ? ' &nbsp;·&nbsp; ⏰ ' + formatearHora(evento.hora) : ''}
       </p>
-      <span class="badge badge-estado-${evento.estado_instancia === 'completado' ? 'completado' : 'nuevo'}">
-        ${evento.estado_instancia}
+      <span class="badge badge-estado-${yaCompletado ? 'completado' : 'nuevo'}" style="margin-bottom:var(--space-4); display:inline-block;">
+        ${yaCompletado ? 'Completado' : 'Pendiente'}
       </span>
       <button class="btn btn-primary btn-sm btn-block" id="cal-completar-instancia"
-        style="margin-top:var(--space-4);" ${evento.estado_instancia === 'completado' ? 'disabled' : ''}>
-        Marcar como completado
+        style="margin-top:var(--space-3);" ${yaCompletado ? 'disabled' : ''}>
+        ${yaCompletado ? 'Ya completado' : 'Marcar como completado'}
       </button>
     `;
     $('#cal-completar-instancia')?.addEventListener('click', async () => {
       await completarInstancia(evento.id);
-      toastExito('Recordatorio completado.');
+      toastExito('Instancia completada.');
       renderVistaActual();
       cerrarPanel();
     });
@@ -535,6 +630,12 @@ async function bind() {
     placeholder: 'Agentes',
     options: [],
     onChange(ids) {
+      if (ids.length === 0) {
+        toastError('Debes tener al menos 1 agente seleccionado.');
+        // Restaurar selección anterior sin disparar onChange
+        msAgentes.setSelected(estado.agenteIds);
+        return;
+      }
       estado.agenteIds = ids;
       renderVistaActual();
     }
@@ -551,6 +652,9 @@ async function bind() {
 /* ============================================================
    INIT
    ============================================================ */
+/* ============================================================
+   INIT
+   ============================================================ */
 async function init() {
   renderLayout('calendario');
   const ctx = await inicializarApp();
@@ -562,7 +666,6 @@ async function init() {
   const main = document.getElementById('main-content');
   main.innerHTML = plantilla();
 
-  // Cargar empresas del usuario para el msEmpresas
   EMPRESAS = await obtenerEmpresasDelAgente(AGENTE_ID);
 
   await bind();

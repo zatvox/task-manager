@@ -95,14 +95,23 @@ function plantilla() {
               <input type="checkbox" id="tarea-cronologica" />
               <label for="tarea-cronologica">Es recordatorio cronológico (sin fecha de cierre fija)</label>
             </div>
-            <div id="campos-puntual" class="form-row">
-              <div class="form-group">
-                <label class="form-label">Fecha de inicio</label>
-                <input class="form-control" type="date" id="tarea-fecha-inicio" />
+            <div id="campos-puntual">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Fecha de inicio</label>
+                  <input class="form-control" type="date" id="tarea-fecha-inicio" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Fecha de cierre</label>
+                  <input class="form-control" type="date" id="tarea-fecha-cierre" />
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Fecha de cierre</label>
-                <input class="form-control" type="date" id="tarea-fecha-cierre" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Hora de recordatorio</label>
+                  <input class="form-control" type="time" id="tarea-hora-recordatorio" />
+                </div>
+                <div class="form-group" style="visibility:hidden;"></div>
               </div>
             </div>
             <div id="campos-cronologica" style="display:none;">
@@ -140,6 +149,13 @@ function plantilla() {
                     <input class="form-control" type="number" min="1" max="31" id="tarea-dia-q2" value="30" />
                   </div>
                 </div>
+              </div>
+              <div class="form-row" style="margin-top:var(--space-3);">
+                <div class="form-group">
+                  <label class="form-label">Hora de recordatorio</label>
+                  <input class="form-control" type="time" id="tarea-hora-recordatorio-crono" />
+                </div>
+                <div class="form-group" style="visibility:hidden;"></div>
               </div>
             </div>
             <div class="form-row">
@@ -188,7 +204,7 @@ function badgeEstado(t) {
 }
 
 function avataresAsignados(asignados = []) {
-  return `<div class="avatar-group">${asignados.slice(0, 3).map((a) =>
+  return `<div class="avatar-group">${asignados.slice(0, 5).map((a) =>
     `<div class="avatar" title="${escapeHTML(a.agente?.nombre || '')}">${iniciales(a.agente?.nombre || '?')}</div>`
   ).join('')}</div>`;
 }
@@ -259,7 +275,7 @@ function kanbanCardTarea(t) {
         <span class="badge badge-prioridad-${t.prioridad}">${ETIQUETAS_PRIORIDAD[t.prioridad]}</span>
         ${AGRUPACION !== 'agente' ? avataresAsignados(t.asignados) : ''}
       </div>
-      ${t.fecha_cierre ? `<div style="font-size:var(--fs-xs); color:${vencida ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:var(--space-2);">📅 ${formatearFecha(t.fecha_cierre)}</div>` : ''}
+      ${t.fecha_cierre ? `<div style="font-size:var(--fs-xs); color:${vencida ? 'var(--color-danger)' : 'var(--text-tertiary)'}; margin-top:var(--space-2);">📅 ${formatearFecha(t.fecha_cierre)}${t.hora_recordatorio ? ' ⏰ ' + t.hora_recordatorio.slice(0,5) : ''}</div>` : ''}
       ${AGRUPACION !== 'proyecto' && t.proyecto ? `<div style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-top:var(--space-1);"><span style="color:${t.proyecto.color_etiqueta || '#00d4ff'}">●</span> ${escapeHTML(t.proyecto.nombre)}</div>` : ''}
       ${empresa ? `<div style="font-size:var(--fs-xs); color:var(--text-tertiary); margin-top:var(--space-1);">🏢 ${escapeHTML(empresa)}</div>` : ''}
     </div>`;
@@ -416,7 +432,7 @@ async function abrirPanelTarea(id) {
       ${tarea.es_cronologica ? '<span class="badge badge-estado-en_progreso">🔁 Cronológica</span>' : ''}
     </p>
     <p style="font-size:var(--fs-sm); color:var(--text-secondary); margin:var(--space-3) 0;">${escapeHTML(tarea.descripcion || 'Sin descripción.')}</p>
-    <p style="font-size:var(--fs-xs); color:var(--text-tertiary);">Inicio: ${formatearFecha(tarea.fecha_inicio)} ${tarea.fecha_cierre ? '· Cierre: ' + formatearFecha(tarea.fecha_cierre) : ''}</p>
+    <p style="font-size:var(--fs-xs); color:var(--text-tertiary);">Inicio: ${formatearFecha(tarea.fecha_inicio)} ${tarea.fecha_cierre ? '· Cierre: ' + formatearFecha(tarea.fecha_cierre) : ''} ${tarea.hora_recordatorio ? '· ⏰ ' + tarea.hora_recordatorio.slice(0,5) : ''}</p>
     <div style="margin:var(--space-3) 0;"><strong style="font-size:var(--fs-sm);">Asignados:</strong> ${avataresAsignados(tarea.asignados)}</div>
     <div style="margin:var(--space-3) 0;">${(tarea.etiquetas || []).map((e) => `<span class="badge badge-estado-archivado">${escapeHTML(e)}</span>`).join(' ')}</div>
 
@@ -578,8 +594,9 @@ function bind() {
     };
 
     if (esCronologica) {
-      datos.frecuencia   = $('#tarea-frecuencia').value;
-      datos.fecha_inicio = new Date().toISOString();
+      datos.frecuencia          = $('#tarea-frecuencia').value;
+      datos.fecha_inicio        = new Date().toISOString().slice(0, 10);
+      datos.hora_recordatorio   = $('#tarea-hora-recordatorio-crono').value || null;
       if (datos.frecuencia === 'semanal')   datos.dias_semana = $$('.dia-semana:checked').map((c) => c.value);
       if (datos.frecuencia === 'mensual')   datos.dia_mes = Number($('#tarea-dia-mes').value) || 1;
       if (datos.frecuencia === 'quincenal') datos.dias_semana = [
@@ -587,8 +604,9 @@ function bind() {
         String(Number($('#tarea-dia-q2').value) || 30)
       ];
     } else {
-      datos.fecha_inicio = $('#tarea-fecha-inicio').value || new Date().toISOString();
-      datos.fecha_cierre = $('#tarea-fecha-cierre').value || null;
+      datos.fecha_inicio        = $('#tarea-fecha-inicio').value || new Date().toISOString().slice(0, 10);
+      datos.fecha_cierre        = $('#tarea-fecha-cierre').value || null;
+      datos.hora_recordatorio   = $('#tarea-hora-recordatorio').value || null;
     }
 
     try {

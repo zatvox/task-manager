@@ -67,6 +67,9 @@ export function renderLayout(activeId, { mostrarBuscador = true } = {}) {
         <div class="topbar__search" ${mostrarBuscador ? '' : 'style="visibility:hidden"'}>
           <input type="search" class="form-control" placeholder="Buscar tareas, proyectos…" data-global-search aria-label="Buscar" />
         </div>
+        <div id="tipo-cambio-widget" class="topbar__tipo-cambio" title="Tipo de cambio SUNAT (Decolecta)">
+          <span style="font-size:var(--fs-xs); color:var(--text-tertiary);">TC...</span>
+        </div>
         <div class="topbar__actions">
           <button class="btn btn-icon" data-action="toggle-tema" aria-label="Cambiar tema">🌓</button>
           <div class="dropdown">
@@ -89,4 +92,65 @@ export function renderLayout(activeId, { mostrarBuscador = true } = {}) {
 
   const avatarBtn = root.querySelector('[data-action="toggle-user-menu"]');
   avatarBtn?.querySelector('[data-user-photo]')?.addEventListener('load', (e) => { e.target.style.display = 'block'; e.target.previousElementSibling?.style?.setProperty('display', 'none'); });
+
+  // Tipo de cambio (fire & forget)
+  cargarTipoCambio();
+}
+
+/* ============================================================
+   TIPO DE CAMBIO (SUNAT via Decolecta)
+   ============================================================ */
+function actualizarWidgetTC(buy, sell) {
+  const w = document.getElementById('tipo-cambio-widget');
+  if (!w) return;
+  w.innerHTML = `
+    <span class="tc-label">USD/PEN</span>
+    <span class="tc-grupo"><span class="tc-sublabel">C</span><span class="tc-compra">${parseFloat(buy).toFixed(3)}</span></span>
+    <span class="tc-sep">|</span>
+    <span class="tc-grupo"><span class="tc-sublabel">V</span><span class="tc-venta">${parseFloat(sell).toFixed(3)}</span></span>
+  `;
+}
+
+async function cargarTipoCambio() {
+  const widget = document.getElementById('tipo-cambio-widget');
+  if (!widget) return;
+
+  const hoy = new Date().toISOString().slice(0, 10);
+  const cacheKey = `${CONFIG.STORAGE_KEYS.TIPO_CAMBIO}_${hoy}`;
+
+  // Intentar desde caché del día
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const { buy_price, sell_price } = JSON.parse(cached);
+      actualizarWidgetTC(buy_price, sell_price);
+      return;
+    }
+  } catch (_) {}
+
+  // Limpiar cachés de días anteriores
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith(CONFIG.STORAGE_KEYS.TIPO_CAMBIO + '_') && k !== cacheKey)
+      .forEach((k) => localStorage.removeItem(k));
+  } catch (_) {}
+
+  // Fetch via Edge Function proxy (evita CORS de Decolecta)
+  try {
+    const res = await fetch(
+      `https://ishwabioqxdpbldcxpwc.supabase.co/functions/v1/tipo-cambio?date=${hoy}`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.buy_price && data.sell_price) {
+      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (_) {}
+      actualizarWidgetTC(data.buy_price, data.sell_price);
+    } else {
+      widget.innerHTML = '<span class="tc-label" style="color:var(--text-tertiary);">TC sin datos</span>';
+    }
+  } catch (err) {
+    console.warn('[TC] No se pudo obtener el tipo de cambio:', err.message);
+    widget.innerHTML = '<span class="tc-label" style="color:var(--text-tertiary);">TC —</span>';
+  }
 }

@@ -12,6 +12,10 @@ export const CONFIG = {
   SUPABASE_URL: 'https://ishwabioqxdpbldcxpwc.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzaHdhYmlvcXhkcGJsZGN4cHdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjExMTQsImV4cCI6MjA5NDMzNzExNH0.TtzSkl4_O9rU69vckQhtpZOFtL_LxqdQX0DhBHddBDU',
 
+  // API Decolecta (tipo de cambio SUNAT, consulta RUC)
+  // Reemplaza con tu token real en producción
+  DECOLECTA_API_KEY: 'sk_12108.HdrfyiKml0kBgkVVox5YuOtRKqK2SOh7',
+
   // URL de producción (GitHub Pages). Los emails de confirmación siempre
   // deben apuntar aquí, sin importar desde dónde se haga el registro.
   APP_URL: 'https://zatvox.github.io/task-manager',
@@ -38,6 +42,7 @@ export const CONFIG = {
     EMPRESA_ACTIVA: 'zv_empresa_activa',
     TEMA: 'zv_tema',
     SIDEBAR_COLLAPSED: 'zv_sidebar_collapsed',
-    INDICADOR_CALENDARIO: 'zv_indicador_calendario'
+    INDICADOR_CALENDARIO: 'zv_indicador_calendario',
+    TIPO_CAMBIO: 'zv_tipo_cambio'
   }
 };

@@ -4,15 +4,27 @@
  * ============================================================================
  */
 
+/**
+ * Parsea la parte de FECHA de un ISO string como hora LOCAL (no UTC).
+ * Siempre usa los primeros 10 chars para cubrir tanto "YYYY-MM-DD"
+ * como "YYYY-MM-DDTHH:MM:SS+00:00" que devuelve Supabase en columnas DATE/TIMESTAMPTZ.
+ */
+function parseFechaLocal(iso) {
+  if (!iso) return new Date(NaN);
+  return new Date(iso.slice(0, 10) + 'T00:00:00'); // sin Z = medianoche hora local
+}
+
 /** Formatea fecha ISO a "dd MMM yyyy" en español */
 export function formatearFecha(iso, opts = {}) {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = parseFechaLocal(iso);
   return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric', ...opts });
 }
 
 export function formatearFechaHora(iso) {
   if (!iso) return '—';
+  // Para timestamps (created_at, completado_en) new Date() directo es correcto:
+  // convierte UTC → hora local del browser, que es lo que queremos ver.
   const d = new Date(iso);
   return d.toLocaleString('es-PE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -40,7 +52,7 @@ export function tiempoRelativo(iso) {
 
 export function esVencida(fechaCierre, estado) {
   if (!fechaCierre || estado === 'completado' || estado === 'archivado') return false;
-  return new Date(fechaCierre) < new Date();
+  return parseFechaLocal(fechaCierre) < new Date();
 }
 
 export function iniciales(nombre = '') {
