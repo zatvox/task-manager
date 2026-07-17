@@ -1,0 +1,17 @@
+# Tareas para Claude
+
+**Proyecto:** Mejoras y Nuevos proyectos Website Pages
+**Actualizado:** 17/07/2026 07:50 a. m. (Lima)
+**Total pendientes:** 3
+
+## Tareas
+
+- 🟠 **Vincular Google API con sistema ZV Task Manager.** (nuevo) · 📅 2026-07-20
+  > Via API de google vincular la cuenta de google a travez auth supabase para leer y editar el google keep personal y otras apps de google (drive,gmail,etc)
+- 🟠 **Sistema de prediccion de apuestas deportivas** (en_revision) · 📅 2026-07-20
+  > A travez de APIs gratuitas obtener informacion y estadistica de los equipos actuales y sus partidos recientes asi como explican en este video https://www.instagram.com/p/DZyPsKBhDjo/
+- 🟠 **Sistema inmobiliario completo** (nuevo) · 📅 2026-07-20
+  > Sistema que ayude a la gestión de alquiler o proyectos de venta de inmuebles, con módulos de inmuebles, Ventas, alquileres, cobranzas, pagos etc totalmente completo y funcional en web y mobile, apoyarse de apps similares en el mercado reconocidas y populares. 
+
+---
+_Generado automaticamente por Edge Function nightly-tasks_
