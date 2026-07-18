@@ -1,8 +1,8 @@
 # Tareas para Claude
 
 **Proyecto:** Mejoras y Nuevos proyectos Website Pages
-**Actualizado:** 17/07/2026 07:50 a. m. (Lima)
-**Total pendientes:** 3
+**Actualizado:** 18/07/2026 07:50 a. m. (Lima)
+**Total pendientes:** 4
 
 ## Tareas
 
@@ -12,6 +12,8 @@
   > A travez de APIs gratuitas obtener informacion y estadistica de los equipos actuales y sus partidos recientes asi como explican en este video https://www.instagram.com/p/DZyPsKBhDjo/
 - 🟠 **Sistema inmobiliario completo** (nuevo) · 📅 2026-07-20
   > Sistema que ayude a la gestión de alquiler o proyectos de venta de inmuebles, con módulos de inmuebles, Ventas, alquileres, cobranzas, pagos etc totalmente completo y funcional en web y mobile, apoyarse de apps similares en el mercado reconocidas y populares. 
+- 🟠 **Hacer las tarjetas de presentacion personal para la familia** (nuevo) · 📅 2026-07-20
+  > Mandar a hacer el diseño con IA de cara frontal y trasera y ponerle el codigo qr de esta pagina https://qr-code.io/es/qr?step=1&qr_onboarding=active_dpf&fx=c%C3%B3digo-QR&utm_source=google&utm_medium=cpc&utm_id=21676959310&utm_content=168666728524&utm_term=c%C3%B3digo+qr&network=g&matchtype=b&device=c&gaid=PE-ES-C-DPF&gad_source=1&gad_campaignid=21676959310&gbraid=0AAAAA-G5uJJ8SoTcWpX4hwuDmi69p-HJD&gclid=Cj0KCQjw8PDPBhCeARIsAOJwmWXNvayTGxlI167xvvN4FSkN-XdbV6NN384wXEBLUcCeASuLLQk0kBsaAooAEALw_wcB
 
 ---
 _Generado automaticamente por Edge Function nightly-tasks_
