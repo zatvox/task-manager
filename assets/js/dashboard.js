@@ -52,23 +52,24 @@ async function init() {
       obtenerProgresoProyectos(empresaId)
     ]);
 
+    const urlReportes = 'pages/reportes.html';
     document.getElementById('stats-grid').innerHTML = `
-      <div class="card stat-card">
+      <a href="${urlReportes}" class="card stat-card" style="text-decoration:none; cursor:pointer;">
         <div class="stat-card__value">${resumen.totalTareas}</div>
         <div class="stat-card__label">Tareas totales</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a href="${urlReportes}#vencidas" class="card stat-card" style="text-decoration:none; cursor:pointer;">
         <div class="stat-card__value" style="color:var(--color-danger)">${resumen.tareasVencidas}</div>
         <div class="stat-card__label">Tareas vencidas</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a href="${urlReportes}#completadas" class="card stat-card" style="text-decoration:none; cursor:pointer;">
         <div class="stat-card__value" style="color:var(--color-success)">${resumen.porEstado.completado || 0}</div>
         <div class="stat-card__label">Completadas</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a href="${urlReportes}#en_progreso" class="card stat-card" style="text-decoration:none; cursor:pointer;">
         <div class="stat-card__value" style="color:var(--color-accent)">${resumen.porEstado.en_progreso || 0}</div>
         <div class="stat-card__label">En progreso</div>
-      </div>
+      </a>
     `;
 
     const proximas = misTareas

@@ -1,0 +1,278 @@
+/* ============================================================
+   CALENDARIO — ESTILOS ESPECÍFICOS
+   Complementa: variables.css, styles.css, components.css
+   ============================================================ */
+
+/* ── TOOLBAR Y NAVEGACIÓN ───────────────────────────────── */
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cal-titulo-periodo {
+  min-width: 200px;
+  text-align: center;
+}
+
+.cal-tabs {
+  border-bottom: none;
+  margin: 0;
+}
+
+.cal-filtros-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.cal-indicador-select {
+  max-width: 190px;
+}
+
+/* ── GRID MENSUAL ───────────────────────────────────────── */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.calendar-grid .dow {
+  background: var(--bg-surface-raised);
+  padding: var(--space-2);
+  text-align: center;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  background: var(--bg-surface);
+  min-height: 108px;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-day.otro-mes { opacity: 0.35; }
+.calendar-day.hoy     { background: var(--color-accent-soft); }
+.calendar-day.drag-over { outline: 2px dashed var(--color-accent); }
+
+.calendar-day__num {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  font-weight: 700;
+}
+
+.cal-chip-extra {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── CHIPS DE EVENTO ────────────────────────────────────── */
+.evento-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface-raised);
+  border-left: 3px solid var(--color-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.evento-chip.vencida {
+  color: var(--color-danger);
+  border-left-color: var(--color-danger);
+}
+
+.cal-chip-time {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-right: 3px;
+}
+
+.cal-chip-time--block {
+  font-size: 10px;
+  opacity: 0.7;
+  display: block;
+}
+
+/* ── GRID SEMANAL ───────────────────────────────────────── */
+.semana-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(160px, 1fr));
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+
+.dia-columna {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  min-height: 300px;
+}
+
+.cal-dia-header {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  margin-bottom: var(--space-2);
+  text-align: center;
+}
+
+.cal-dia-header--hoy { color: var(--color-accent); }
+
+.cal-sin-eventos {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── VISTA DIARIA ───────────────────────────────────────── */
+.hora-fila {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 48px;
+}
+
+.hora-label {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  padding: var(--space-2);
+}
+
+.cal-hora-fila-activa { background: var(--bg-surface-raised); }
+
+.cal-todo-el-dia {
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+}
+
+.cal-todo-el-dia .hora-label { font-size: 10px; }
+
+.cal-chips-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-1) 0;
+}
+
+.cal-chips-col--dia {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) 0;
+}
+
+/* ── PANEL LATERAL — CONTENIDO ──────────────────────────── */
+.cal-panel-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-2);
+}
+
+.cal-panel-desc {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  margin: var(--space-3) 0;
+}
+
+.cal-section-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+/* Panel — Asignados */
+.cal-asignado-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.cal-avatar-sm {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 10px !important;
+}
+
+.cal-asignado-nombre {
+  font-size: var(--fs-sm);
+  flex: 1;
+}
+
+.cal-quitar-btn { color: var(--color-danger, #f87171); font-size: 11px; }
+
+.cal-add-agente-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.cal-add-agente-row .form-control { font-size: var(--fs-sm); }
+.cal-add-agente-row .btn         { white-space: nowrap; }
+
+.cal-empty-msg {
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}
+
+/* Panel — Etiquetas */
+.cal-etiquetas {
+  margin: var(--space-3) 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Panel — Comentarios */
+.cal-comentarios-list {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: var(--space-3) 0;
+}
+
+.cal-comentario {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.cal-comentario-autor { font-size: var(--fs-xs); font-weight: 600; }
+.cal-comentario-texto { font-size: var(--fs-sm); }
+
+.cal-form-comentario { display: flex; gap: var(--space-2); }
+
+/* Panel — Historial */
+.cal-historial-list {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.cal-historial-item {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}

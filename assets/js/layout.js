@@ -6,6 +6,7 @@
  * ============================================================================
  */
 import { CONFIG } from './config.js';
+import { supabase } from './supabase-client.js';
 
 const NAV = [
   { seccion: 'General', links: [
@@ -100,15 +101,24 @@ export function renderLayout(activeId, { mostrarBuscador = true } = {}) {
 /* ============================================================
    TIPO DE CAMBIO (SUNAT via Decolecta)
    ============================================================ */
-function actualizarWidgetTC(buy, sell) {
+function actualizarWidgetTC(buy, sell, fecha, fallback) {
   const w = document.getElementById('tipo-cambio-widget');
   if (!w) return;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const esFallback = fallback || (fecha && fecha !== hoy);
+  const fechaLabel = esFallback && fecha
+    ? ` <span style="font-size:9px;color:var(--text-tertiary);margin-left:2px;">${fecha.slice(8,10)}/${fecha.slice(5,7)}</span>`
+    : '';
   w.innerHTML = `
     <span class="tc-label">USD/PEN</span>
     <span class="tc-grupo"><span class="tc-sublabel">C</span><span class="tc-compra">${parseFloat(buy).toFixed(3)}</span></span>
     <span class="tc-sep">|</span>
     <span class="tc-grupo"><span class="tc-sublabel">V</span><span class="tc-venta">${parseFloat(sell).toFixed(3)}</span></span>
+    ${fechaLabel}
   `;
+  w.title = esFallback
+    ? `Último TC registrado (${fecha}) — sin datos para hoy`
+    : `Tipo de cambio SUNAT del ${fecha || hoy} (Decolecta)`;
 }
 
 async function cargarTipoCambio() {
@@ -118,12 +128,12 @@ async function cargarTipoCambio() {
   const hoy = new Date().toISOString().slice(0, 10);
   const cacheKey = `${CONFIG.STORAGE_KEYS.TIPO_CAMBIO}_${hoy}`;
 
-  // Intentar desde caché del día
+  // 1. Caché localStorage (evita hit a Supabase en cada navegación)
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      const { buy_price, sell_price } = JSON.parse(cached);
-      actualizarWidgetTC(buy_price, sell_price);
+      const { buy_price, sell_price, fecha, fallback } = JSON.parse(cached);
+      actualizarWidgetTC(buy_price, sell_price, fecha, fallback);
       return;
     }
   } catch (_) {}
@@ -135,22 +145,24 @@ async function cargarTipoCambio() {
       .forEach((k) => localStorage.removeItem(k));
   } catch (_) {}
 
-  // Fetch via Edge Function proxy (evita CORS de Decolecta)
+  // 2. Leer directo de tipo_cambio_cache en Supabase (sin llamar a la Edge Function)
   try {
-    const res = await fetch(
-      `https://ishwabioqxdpbldcxpwc.supabase.co/functions/v1/tipo-cambio?date=${hoy}`,
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.buy_price && data.sell_price) {
-      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (_) {}
-      actualizarWidgetTC(data.buy_price, data.sell_price);
+    const { data } = await supabase
+      .from('tipo_cambio_cache')
+      .select('buy_price, sell_price, fecha')
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.buy_price && data?.sell_price) {
+      const fallback = data.fecha !== hoy;
+      const entry = { buy_price: String(data.buy_price), sell_price: String(data.sell_price), fecha: data.fecha, fallback };
+      try { localStorage.setItem(cacheKey, JSON.stringify(entry)); } catch (_) {}
+      actualizarWidgetTC(entry.buy_price, entry.sell_price, entry.fecha, entry.fallback);
     } else {
-      widget.innerHTML = '<span class="tc-label" style="color:var(--text-tertiary);">TC sin datos</span>';
+      widget.innerHTML = '<span class="tc-label" style="color:var(--text-tertiary);">TC —</span>';
     }
-  } catch (err) {
-    console.warn('[TC] No se pudo obtener el tipo de cambio:', err.message);
+  } catch (_) {
     widget.innerHTML = '<span class="tc-label" style="color:var(--text-tertiary);">TC —</span>';
   }
 }

@@ -481,32 +481,10 @@ export async function actividadRecienteProyecto(proyectoId, limite = 30) {
 }
 
 /* ============================================================================
-   RECORDATORIOS CRONOLÓGICOS
+   RECORDATORIOS / TAREAS CRONOLÓGICAS
+   Migración 009: recordatorios_cronologicos eliminada.
+   Toda la lógica vive en tareas + instancias_recordatorios.
    ============================================================================ */
-
-async function crearRecordatorioDesdeTaskCronologica(tarea) {
-  const { data, error } = await supabase
-    .from('recordatorios_cronologicos')
-    .insert({
-      agente_id: tarea.creador_id,
-      empresa_id: tarea.empresa_id,
-      proyecto_id: tarea.proyecto_id,
-      tarea_id: tarea.id,
-      titulo: tarea.titulo,
-      descripcion: tarea.descripcion,
-      frecuencia: tarea.frecuencia,
-      dias_semana: tarea.dias_semana,
-      dia_mes: tarea.dia_mes
-    })
-    .select()
-    .single();
-  manejarError('crearRecordatorioDesdeTaskCronologica', error);
-  await supabase.rpc('generar_instancias_recordatorio', {
-    p_recordatorio_id: data.id,
-    p_dias: CONFIG.DIAS_GENERACION_RECORDATORIOS
-  });
-  return data;
-}
 
 export async function listarRecordatorios(agenteId, filtros = {}) {
   // Tras la migración 008, TODAS las tareas (puntuales y cronológicas) viven en la
@@ -545,166 +523,68 @@ export async function listarRecordatorios(agenteId, filtros = {}) {
   }));
 }
 
-/** Sincroniza el recordatorio_cronologico vinculado a una tarea cronológica (web equivalent de _sincronizarRecordatorio en mobile) */
+/** Migración 009: genera instancias directamente desde tareas, sin RC */
 export async function sincronizarRecordatorioPorTarea(tarea, agentesIds = []) {
   try {
     const hoy = new Date().toISOString().slice(0, 10);
-    const { data: recExistente } = await supabase
-      .from('recordatorios_cronologicos').select('id').eq('tarea_id', tarea.id).maybeSingle();
-
-    const camposRec = {
-      titulo: tarea.titulo,
-      descripcion: tarea.descripcion ?? null,
-      empresa_id: tarea.empresa_id,
-      proyecto_id: tarea.proyecto_id ?? null,
-      frecuencia: tarea.frecuencia,
-      dias_semana: tarea.dias_semana ?? null,
-      dia_mes: tarea.dia_mes ?? null,
-      dia_mes_2: tarea.dia_mes_2 ?? null,
-      fecha_inicio: tarea.fecha_inicio,
-      hora_recordatorio: tarea.hora_recordatorio ?? null,
-      agente_id: tarea.creador_id,
-      estado: 'activo'
-    };
-
-    let recId;
-    if (recExistente) {
-      await supabase.from('recordatorios_cronologicos').update(camposRec).eq('id', recExistente.id);
-      recId = recExistente.id;
-    } else {
-      const { data: nuevo } = await supabase
-        .from('recordatorios_cronologicos').insert({ ...camposRec, tarea_id: tarea.id }).select('id').single();
-      recId = nuevo?.id;
-    }
-    if (!recId) return;
-
-    // Sincronizar agentes
-    await supabase.from('agentes_recordatorios').delete().eq('recordatorio_id', recId);
-    if (agentesIds.length) {
-      await supabase.from('agentes_recordatorios')
-        .insert(agentesIds.map((aid) => ({ recordatorio_id: recId, agente_id: aid })));
-    }
-
-    // Borrar instancias pendientes y regenerar
-    await supabase.from('instancias_recordatorios').delete()
-      .eq('recordatorio_id', recId).gte('fecha_programada', hoy).is('completado_en', null);
-    await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: recId, p_dias: 90 });
+    // Borrar instancias futuras pendientes de esta tarea
+    await supabase.from('instancias_recordatorios')
+      .delete()
+      .eq('tarea_id', tarea.id)
+      .gte('fecha_programada', hoy)
+      .is('completado_en', null);
+    // Regenerar con nueva función (lee hora directamente de tareas)
+    await supabase.rpc('generar_instancias_tarea', { p_tarea_id: tarea.id, p_dias: 90 });
   } catch (err) {
     console.warn('[sincronizarRecordatorioPorTarea]', err.message);
   }
 }
 
-/** Sincroniza asignaciones de agentes para un recordatorio (delete + insert) */
-async function sincronizarAgentesRecordatorio(recordatorioId, agenteIds = []) {
-  // Eliminar asignaciones actuales
-  await supabase.from('agentes_recordatorios').delete().eq('recordatorio_id', recordatorioId);
-  if (!agenteIds.length) return;
-  const filas = agenteIds.map((aid) => ({ recordatorio_id: recordatorioId, agente_id: aid }));
-  const { error } = await supabase.from('agentes_recordatorios').insert(filas);
-  manejarError('sincronizarAgentesRecordatorio', error);
-}
-
-/** Genera instancias quincenales directamente en JS (sin tocar el RPC) */
-async function generarInstanciasQuincenal(recordatorioId, dia1, dia2) {
-  const instancias = [];
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  const fin = new Date(hoy); fin.setDate(fin.getDate() + CONFIG.DIAS_GENERACION_RECORDATORIOS);
-
-  for (const d = new Date(hoy); d <= fin; d.setDate(d.getDate() + 1)) {
-    const diaMes = d.getDate();
-    if (diaMes === dia1 || diaMes === dia2) {
-      instancias.push({
-        recordatorio_id: recordatorioId,
-        fecha_programada: d.toISOString().slice(0, 10)
-      });
-    }
-  }
-  if (instancias.length) {
-    await supabase.from('instancias_recordatorios').upsert(instancias, { onConflict: 'recordatorio_id,fecha_programada', ignoreDuplicates: true });
-  }
-}
-
-export async function crearRecordatorio(datos) {
-  const { agentes_ids, ...campos } = datos;
-  const { data, error } = await supabase.from('recordatorios_cronologicos').insert(campos).select().single();
-  manejarError('crearRecordatorio', error);
-  // Generar instancias
-  if (datos.frecuencia === 'quincenal') {
-    const dia1 = Number(datos.dias_semana?.[0] || 15);
-    const dia2 = Number(datos.dias_semana?.[1] || 30);
-    await generarInstanciasQuincenal(data.id, dia1, dia2);
-  } else {
-    // Anual: pasar 400 días para cubrir al menos un año completo
-    const diasGen = datos.frecuencia === 'anual' ? 400 : CONFIG.DIAS_GENERACION_RECORDATORIOS;
-    await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: data.id, p_dias: diasGen });
-  }
-  // Asignar agentes
-  if (agentes_ids?.length) await sincronizarAgentesRecordatorio(data.id, agentes_ids);
-  return data;
-}
-
+/** @deprecated — redirige a actualizarTarea + sincronizarRecordatorioPorTarea */
 export async function actualizarRecordatorio(id, datos) {
   const { agentes_ids, ...campos } = datos;
-  const { error } = await supabase.from('recordatorios_cronologicos').update(campos).eq('id', id);
-  manejarError('actualizarRecordatorio', error);
-  // Regenerar instancias futuras
-  if (datos.frecuencia === 'quincenal') {
-    const dia1 = Number(datos.dias_semana?.[0] || 15);
-    const dia2 = Number(datos.dias_semana?.[1] || 30);
-    const hoy = new Date().toISOString().slice(0, 10);
-    await supabase.from('instancias_recordatorios').delete().eq('recordatorio_id', id).gte('fecha_programada', hoy).eq('estado', 'pendiente');
-    await generarInstanciasQuincenal(id, dia1, dia2);
-  } else {
-    const diasGen = datos.frecuencia === 'anual' ? 400 : CONFIG.DIAS_GENERACION_RECORDATORIOS;
-    await supabase.rpc('generar_instancias_recordatorio', { p_recordatorio_id: id, p_dias: diasGen });
-  }
-  // Sincronizar agentes (si se pasó el array)
-  if (agentes_ids !== undefined) await sincronizarAgentesRecordatorio(id, agentes_ids);
-  const { data, error: errSel } = await supabase.from('recordatorios_cronologicos').select('*').eq('id', id).single();
-  manejarError('actualizarRecordatorio:select', errSel);
-  return data;
+  const tarea = await actualizarTarea(id, campos);
+  await sincronizarRecordatorioPorTarea({ ...tarea, id }, agentes_ids ?? []);
+  return tarea;
 }
 
-export async function pausarRecordatorio(id, estado) {
-  const { data, error } = await supabase.from('recordatorios_cronologicos').update({ estado }).eq('id', id).select().single();
-  manejarError('pausarRecordatorio', error);
-  return data;
-}
-
+/** @deprecated — redirige a eliminarTarea */
 export async function eliminarRecordatorio(id) {
-  const { error } = await supabase.from('recordatorios_cronologicos').delete().eq('id', id);
-  manejarError('eliminarRecordatorio', error);
+  return eliminarTarea(id);
 }
 
-export async function obtenerInstanciasDelPeriodo(agenteId, desde, hasta, agenteIds = []) {
-  const agentes = agenteIds.length ? agenteIds : [agenteId];
-
-  // Solo recordatorios que el agente tiene ASIGNADOS (no por ser creador)
-  const { data: asigRec } = await supabase
-    .from('agentes_recordatorios')
-    .select('recordatorio_id')
-    .in('agente_id', agentes);
-  const recIds = [...new Set((asigRec ?? []).map((r) => r.recordatorio_id))];
-
-  if (!recIds.length) return [];
-
-  // hasta con fin de día para cubrir columnas TIMESTAMPTZ (diaria: desde===hasta)
+export async function obtenerInstanciasDelPeriodo(agenteId, desde, hasta, agenteIds = [], empresaIds = [], proyectoIds = []) {
   const hastaEOD = hasta.length === 10 ? hasta + 'T23:59:59' : hasta;
+  const agentes  = agenteIds.length ? agenteIds : (agenteId ? [agenteId] : []);
 
-  const { data, error } = await supabase
+  // Construir query de instancias
+  let q = supabase
     .from('instancias_recordatorios')
-    .select('*, recordatorio:recordatorios_cronologicos(titulo, descripcion, hora_recordatorio, proyecto_id, estado, tarea_id)')
-    .in('recordatorio_id', recIds)
+    .select('*, tarea:tareas(titulo, descripcion, hora_recordatorio, proyecto_id, empresa_id, estado, es_cronologica)')
     .gte('fecha_programada', desde)
     .lte('fecha_programada', hastaEOD);
 
+  if (agentes.length) {
+    // Filtrar por tareas asignadas a los agentes
+    const { data: asigTareas } = await supabase
+      .from('agentes_tareas')
+      .select('tarea_id')
+      .in('agente_id', agentes);
+    const tareaIds = [...new Set((asigTareas ?? []).map((r) => r.tarea_id))];
+    if (!tareaIds.length) return [];
+    q = q.in('tarea_id', tareaIds);
+  }
+
+  const { data, error } = await q;
   manejarError('obtenerInstanciasDelPeriodo', error);
 
-  // Filtrar recordatorios pausados y deduplicar (mismo recordatorio + fecha)
+  // Filtrar post-query por empresa, proyecto y estado. Deduplicar por (tarea_id, fecha)
   const seen = new Set();
   return (data ?? []).filter((i) => {
-    if (i.recordatorio?.estado === 'pausado') return false;
-    const key = `${i.recordatorio_id}_${i.fecha_programada?.slice(0, 10)}`;
+    if (i.tarea?.estado === 'archivado') return false;
+    if (empresaIds.length && !empresaIds.includes(i.tarea?.empresa_id)) return false;
+    if (proyectoIds.length && !proyectoIds.includes(i.tarea?.proyecto_id)) return false;
+    const key = `${i.tarea_id}_${i.fecha_programada?.slice(0, 10)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -835,51 +715,68 @@ function expandirTareaCronologica(tarea, desde, hasta) {
 }
 
 export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], agente_id, agente_ids = [], desde, hasta, proyecto_ids = [] }) {
-  // ── IDs de tareas asignadas al agente (para puntuales y cronológicas) ────────
-  const filtroAgentes = agente_ids.length ? agente_ids : (agente_id ? [agente_id] : []);
-  let tareaIdsAsignadas = null; // null = sin filtro de agente
+  // Agentes a filtrar: si el usuario seleccionó filtro explícito usa ese, si no usa el agente logueado
+  const agentes = agente_ids.length ? agente_ids : (agente_id ? [agente_id] : []);
+  if (!agentes.length) return [];
 
-  if (filtroAgentes.length) {
-    const { data: asig } = await supabase.from('agentes_tareas').select('tarea_id').in('agente_id', filtroAgentes);
-    tareaIdsAsignadas = (asig ?? []).map((t) => t.tarea_id);
-  }
+  const hastaEOD = hasta.length === 10 ? hasta + 'T23:59:59' : hasta;
 
-  const NULL_ID = '00000000-0000-0000-0000-000000000000';
+  // ── Paso 1: tareas asignadas al agente ───────────────────────────────────────
+  const { data: asig } = await supabase
+    .from('agentes_tareas')
+    .select('tarea_id')
+    .in('agente_id', agentes);
 
-  // ── Tareas PUNTUALES (tienen fecha_cierre) ────────────────────────────────────
-  let qPuntuales = supabase
+  const tareaIds = [...new Set((asig ?? []).map((r) => r.tarea_id))];
+  if (!tareaIds.length) return [];
+
+  // ── Paso 2: queries en paralelo ──────────────────────────────────────────────
+  let qCrono = supabase
+    .from('instancias_recordatorios')
+    .select('id, tarea_id, fecha_programada, estado, tarea:tareas(titulo, descripcion, hora_recordatorio, proyecto_id, estado, es_cronologica)')
+    .in('tarea_id', tareaIds)
+    .gte('fecha_programada', desde)
+    .lte('fecha_programada', hastaEOD);
+
+  let qPunt = supabase
     .from('tareas')
-    .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, fecha_inicio, hora_recordatorio, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
+    .select('id, titulo, descripcion, estado, prioridad, fecha_cierre, hora_recordatorio, proyecto_id, proyecto:proyectos(id, nombre, color_etiqueta)')
+    .in('id', tareaIds)
     .eq('es_cronologica', false)
     .not('fecha_cierre', 'is', null)
-    .neq('estado', 'completado')
+    .not('estado', 'in', '("completado","archivado")')
     .gte('fecha_cierre', desde)
     .lte('fecha_cierre', hasta);
 
-  if (empresa_ids.length) qPuntuales = qPuntuales.in('empresa_id', empresa_ids);
-  else if (empresa_id)    qPuntuales = qPuntuales.eq('empresa_id', empresa_id);
-  if (proyecto_ids.length) qPuntuales = qPuntuales.in('proyecto_id', proyecto_ids);
-  if (tareaIdsAsignadas !== null) {
-    qPuntuales = qPuntuales.in('id', tareaIdsAsignadas.length ? tareaIdsAsignadas : [NULL_ID]);
+  if (proyecto_ids.length) {
+    qCrono = qCrono.in('tarea_id', tareaIds); // ya filtrado, no-op
+    qPunt  = qPunt.in('proyecto_id', proyecto_ids);
   }
 
-  // ── Ejecutar queries en paralelo ──────────────────────────────────────────────
-  // Las tareas cronológicas ahora tienen instancias en BD (migración 008).
-  // Usamos instancias (fuente de verdad) en lugar de expansión JS.
-  const agentesParaInstancias = agente_ids.length ? agente_ids : (agente_id ? [agente_id] : []);
   const [
-    { data: tareasPuntuales, error: errPunt },
-    instancias
-  ] = await Promise.all([
-    qPuntuales,
-    agentesParaInstancias.length
-      ? obtenerInstanciasDelPeriodo(agentesParaInstancias[0], desde, hasta, agentesParaInstancias)
-      : Promise.resolve([])
-  ]);
+    { data: instancias,     error: errCrono },
+    { data: tareasPuntuales, error: errPunt  }
+  ] = await Promise.all([qCrono, qPunt]);
 
-  manejarError('obtenerEventosCalendario:puntuales', errPunt);
+  manejarError('obtenerEventosCalendario:cronologicas', errCrono);
+  manejarError('obtenerEventosCalendario:puntuales',    errPunt);
 
-  // ── Mapear tareas puntuales ───────────────────────────────────────────────────
+  // ── Mapear cronológicas ───────────────────────────────────────────────────────
+  const eventosInstancias = (instancias ?? [])
+    .filter((i) => i.tarea?.es_cronologica && i.tarea?.estado !== 'archivado')
+    .filter((i) => !proyecto_ids.length || proyecto_ids.includes(i.tarea?.proyecto_id))
+    .map((i) => ({
+      tipo: 'recordatorio',
+      id: i.id,
+      tarea_id: i.tarea_id,
+      titulo: i.tarea?.titulo,
+      descripcion: i.tarea?.descripcion,
+      fecha: i.fecha_programada,
+      hora: i.tarea?.hora_recordatorio ? String(i.tarea.hora_recordatorio).slice(0, 5) : null,
+      estado_instancia: i.estado
+    }));
+
+  // ── Mapear puntuales ─────────────────────────────────────────────────────────
   const eventosPuntuales = (tareasPuntuales ?? []).map((t) => ({
     tipo: 'tarea',
     id: t.id,
@@ -891,19 +788,6 @@ export async function obtenerEventosCalendario({ empresa_id, empresa_ids = [], a
     color_proyecto: t.proyecto?.color_etiqueta,
     proyecto_nombre: t.proyecto?.nombre,
     vencida: new Date(t.fecha_cierre + 'T23:59:59') < new Date() && t.estado !== 'completado'
-  }));
-
-  // ── Mapear instancias de recordatorios (incluye tareas cronológicas vía tarea_id) ─
-  const eventosInstancias = (instancias ?? []).map((i) => ({
-    tipo: 'recordatorio',
-    id: i.id,
-    tarea_id: i.recordatorio?.tarea_id ?? null,
-    recordatorio_id: i.recordatorio_id,
-    titulo: i.recordatorio?.titulo,
-    descripcion: i.recordatorio?.descripcion,
-    fecha: i.fecha_programada,
-    hora: i.recordatorio?.hora_recordatorio,
-    estado_instancia: i.estado
   }));
 
   return [...eventosPuntuales, ...eventosInstancias];
@@ -962,9 +846,13 @@ export function suscribirseANotificaciones(agenteId, callback) {
    ============================================================================ */
 
 export async function dashboardEjecutivo(empresaId) {
-  const [{ data: porEstado }, { data: vencidas }, { data: carga }] = await Promise.all([
+  const [{ data: porEstado }, { count: tareasVencidasCount }, { data: carga }] = await Promise.all([
     supabase.from('tareas').select('estado').eq('empresa_id', empresaId),
-    supabase.from('tareas').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId).lt('fecha_cierre', new Date().toISOString()).neq('estado', 'completado'),
+    supabase.from('tareas').select('id', { count: 'exact', head: true })
+      .eq('empresa_id', empresaId)
+      .lt('fecha_cierre', new Date().toISOString())
+      .neq('estado', 'completado')
+      .neq('estado', 'archivado'),
     supabase.from('vista_carga_trabajo').select('*, agente:agentes(nombre)').eq('empresa_id', empresaId)
   ]);
 
@@ -976,7 +864,7 @@ export async function dashboardEjecutivo(empresaId) {
   return {
     totalTareas: porEstado?.length ?? 0,
     porEstado: resumenEstado,
-    tareasVencidas: vencidas?.count ?? 0,
+    tareasVencidas: tareasVencidasCount ?? 0,
     cargaPorAgente: carga ?? []
   };
 }
@@ -1032,11 +920,7 @@ export async function reasignarAgentesATarea(tareaId, agenteIds = []) {
   manejarError('reasignarAgentesATarea', error);
 }
 
-/** Reemplaza TODOS los agentes de un recordatorio (para drag kanban por Agente) */
+/** @deprecated — redirige a reasignarAgentesATarea */
 export async function reasignarAgentesARecordatorio(recordatorioId, agenteIds = []) {
-  await supabase.from('agentes_recordatorios').delete().eq('recordatorio_id', recordatorioId);
-  if (!agenteIds.length) return;
-  const { error } = await supabase.from('agentes_recordatorios')
-    .insert(agenteIds.map((agente_id) => ({ recordatorio_id: recordatorioId, agente_id })));
-  manejarError('reasignarAgentesARecordatorio', error);
+  return reasignarAgentesATarea(recordatorioId, agenteIds);
 }

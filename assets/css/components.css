@@ -144,9 +144,10 @@ table.data-table tr.row-vencida td { color: var(--color-danger); }
 
 /* --- Modales --- */
 .modal-overlay {
+  /* z-dialog (400) > z-modal/side-panel (310) → aparece siempre en frente */
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   display: none; align-items: center; justify-content: center;
-  z-index: var(--z-modal-overlay); padding: var(--space-4);
+  z-index: var(--z-dialog); padding: var(--space-4);
 }
 .modal-overlay.open { display: flex; }
 .modal {

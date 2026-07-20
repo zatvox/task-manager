@@ -142,20 +142,24 @@ function plantilla() {
                   </div>
                 </div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Hora del recordatorio</label>
-                <input class="form-control" type="time" id="r-hora" value="09:00" />
-              </div>
             </div>
+
+            <!-- Hora de recordatorio — visible siempre, obligatorio -->
+            <div class="form-group">
+              <label class="form-label">Hora de recordatorio *</label>
+              <input class="form-control" type="time" id="r-hora" value="09:00" required style="max-width:160px;" />
+            </div>
+
+            <!-- Fecha de cierre — obligatorio para puntuales, opcional para cronológicas -->
             <div class="form-group">
               <label class="form-label" style="display:flex; align-items:center; gap:var(--space-1);">
-                Fecha de cierre *
+                <span id="label-fecha-cierre-txt">Fecha de cierre *</span>
                 <button type="button" id="btn-tooltip-fecha-cierre" class="btn-icon" style="font-size:var(--fs-xs); opacity:.7; line-height:1;"
                   title="¿Qué es fecha de cierre?">(?)
                 </button>
               </label>
               <div id="tooltip-fecha-cierre" style="display:none; font-size:var(--fs-xs); color:var(--text-secondary); background:var(--bg-surface-raised); padding:var(--space-2) var(--space-3); border-radius:var(--radius-sm); margin-bottom:var(--space-2);">
-                Fecha en que la tarea debe estar completada. Aparece en el calendario como evento del día. Campo requerido.
+                Para tareas puntuales es obligatorio — aparece en el calendario. Para cronológicas es opcional (las instancias se generan por frecuencia).
               </div>
               <input class="form-control" type="date" id="r-fecha-cierre" style="max-width:200px;" />
             </div>
@@ -167,7 +171,123 @@ function plantilla() {
         </form>
       </div>
     </div>
+
+    <!-- Panel lateral detalle -->
+    <div class="side-panel-overlay" id="panel-rec-overlay"></div>
+    <aside class="side-panel" id="panel-rec">
+      <div class="side-panel__header">
+        <h3 id="panel-rec-titulo">Detalle</h3>
+        <button class="btn-icon" id="btn-cerrar-panel-rec">✕</button>
+      </div>
+      <div class="side-panel__body" id="panel-rec-body"></div>
+      <div class="side-panel__footer">
+        <button class="btn btn-secondary" id="btn-editar-panel-rec">✏️ Editar</button>
+        <button class="btn btn-danger" id="btn-eliminar-panel-rec">🗑️ Eliminar</button>
+      </div>
+    </aside>
   `;
+}
+
+/* ============================================================ PANEL LATERAL */
+async function abrirPanelRec(r) {
+  const { listarComentarios, crearComentario, listarHistorialTarea, cambiarEstadoTarea } = await import('./supabase-data.js');
+
+  $('#panel-rec-titulo').textContent = r.titulo;
+
+  const esCron = r.tipo === 'cronologica';
+  const comentarios = await listarComentarios(r.id).catch(() => []);
+  const { data: historial } = await listarHistorialTarea(r.id, 0, 10).catch(() => ({ data: [] }));
+
+  const ESTADOS_LISTA = ['nuevo', 'en_progreso', 'en_revision', 'completado', 'archivado'];
+  $('#panel-rec-body').innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Estado</label>
+      <select class="form-control" id="panel-rec-estado">
+        ${ESTADOS_LISTA.map((e) => `<option value="${e}" ${e === r.estado ? 'selected' : ''}>${ETIQUETAS_ESTADO[e]}</option>`).join('')}
+      </select>
+    </div>
+    <p style="margin:var(--space-3) 0; display:flex; gap:var(--space-2); flex-wrap:wrap;">
+      ${esCron
+        ? '<span class="badge badge-estado-en_progreso">🔁 Cronológica</span>'
+        : '<span class="badge badge-estado-archivado">📌 Puntual</span>'}
+    </p>
+    <p style="font-size:var(--fs-sm); color:var(--text-secondary); margin:var(--space-3) 0;">${escapeHTML(r.descripcion || 'Sin descripción.')}</p>
+    <p style="font-size:var(--fs-xs); color:var(--text-tertiary); margin:var(--space-2) 0;">
+      ${esCron ? `🔁 ${etiquetaFrecuencia(r)}` : ''}
+      ${r.hora_recordatorio ? `⏰ ${r.hora_recordatorio.slice(0,5)}` : ''}
+      ${r.fecha_cierre && !esCron ? `📅 Cierre: ${formatearFecha(r.fecha_cierre)}` : ''}
+    </p>
+    <div style="margin:var(--space-3) 0;">
+      <strong style="font-size:var(--fs-sm);">Asignados:</strong>
+      <div class="avatar-group" style="margin-top:var(--space-2);">
+        ${(r.asignados||[]).map((a) => `<div class="avatar" title="${escapeHTML(a.agente?.nombre||'')}">${iniciales(a.agente?.nombre||'?')}</div>`).join('')}
+      </div>
+    </div>
+
+    <h4 style="margin-top:var(--space-5);">Comentarios</h4>
+    <div id="panel-rec-comentarios" style="max-height:200px; overflow-y:auto; margin:var(--space-3) 0;">
+      ${comentarios.length ? comentarios.map((c) => `
+        <div style="display:flex; gap:var(--space-2); margin-bottom:var(--space-3);">
+          <div class="avatar">${iniciales(c.agente?.nombre || '?')}</div>
+          <div>
+            <div style="font-size:var(--fs-xs); font-weight:600;">${escapeHTML(c.agente?.nombre || '')}</div>
+            <div style="font-size:var(--fs-sm);">${escapeHTML(c.texto)}</div>
+          </div>
+        </div>`).join('') : '<p style="color:var(--text-tertiary); font-size:var(--fs-sm);">Sin comentarios.</p>'}
+    </div>
+    <form id="form-panel-comentario" style="display:flex; gap:var(--space-2);">
+      <input class="form-control" id="input-panel-comentario" placeholder="Agregar comentario…" />
+      <button class="btn btn-primary btn-sm" type="submit">Enviar</button>
+    </form>
+
+    <h4 style="margin-top:var(--space-5);">Historial</h4>
+    <div style="font-size:var(--fs-xs); color:var(--text-tertiary);">
+      ${historial?.length ? historial.map((h) => `
+        <div style="padding:var(--space-2) 0; border-bottom:1px solid var(--border-subtle);">
+          ${escapeHTML(h.campo_modificado)}: ${escapeHTML(h.valor_antiguo || '—')} → ${escapeHTML(h.valor_nuevo || '—')}
+        </div>`).join('') : 'Sin cambios registrados.'}
+    </div>
+  `;
+
+  // Bind estado
+  $('#panel-rec-estado').addEventListener('change', async (e) => {
+    try {
+      await cambiarEstadoTarea(r.id, e.target.value, AGENTE.id);
+      toastExito('Estado actualizado.');
+      // Actualizar cache local para no recargar toda la lista
+      r.estado = e.target.value;
+      cargar();
+    } catch (err) { toastError(err.message); }
+  });
+
+  // Bind comentario
+  $('#form-panel-comentario').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const texto = $('#input-panel-comentario').value.trim();
+    if (!texto) return;
+    try {
+      await crearComentario({ tarea_id: r.id, agente_id: AGENTE.id, texto });
+      $('#input-panel-comentario').value = '';
+      abrirPanelRec(r);
+    } catch (err) { toastError(err.message); }
+  });
+
+  // Bind botón editar del footer
+  $('#btn-editar-panel-rec').onclick = () => { cerrarPanelRec(); abrirEdicion(r); };
+  $('#btn-eliminar-panel-rec').onclick = async () => {
+    const ok = await confirmar({ titulo: 'Eliminar tarea', mensaje: 'Se eliminarán también sus instancias futuras si es cronológica.', peligro: true, textoConfirmar: 'Eliminar' });
+    if (!ok) return;
+    try { await eliminarTarea(r.id); toastExito('Eliminada.'); cerrarPanelRec(); cargar(); }
+    catch (err) { toastError(err.message); }
+  };
+
+  $('#panel-rec').classList.add('open');
+  $('#panel-rec-overlay').classList.add('open');
+}
+
+function cerrarPanelRec() {
+  $('#panel-rec').classList.remove('open');
+  $('#panel-rec-overlay').classList.remove('open');
 }
 
 /* ============================================================ TABLA */
@@ -177,14 +297,14 @@ async function cargarTabla(lista) {
     <div class="table-wrap">
       <table class="data-table">
         <thead>
-          <tr><th>Título</th><th>Tipo</th><th>Empresa / Proyecto</th><th>Frecuencia</th><th>Fecha cierre</th><th>Asignados</th><th>Estado</th><th>Acciones</th></tr>
+          <tr><th>Título</th><th>Tipo</th><th>Empresa / Proyecto</th><th>Frecuencia</th><th>Hora</th><th>Fecha cierre</th><th>Asignados</th><th>Estado</th></tr>
         </thead>
         <tbody id="tabla-recordatorios">
           ${lista.length ? lista.map((r) => {
             const esCron = r.tipo === 'cronologica';
             const avatares = (r.asignados||[]).slice(0,4).map((a) =>
               `<div class="avatar" title="${escapeHTML(a.agente?.nombre||'')}">${iniciales(a.agente?.nombre||'?')}</div>`).join('');
-            return `<tr>
+            return `<tr data-abrir="${r.id}" style="cursor:pointer;">
               <td>${escapeHTML(r.titulo)}</td>
               <td>${esCron
                 ? '<span class="badge badge-estado-en_progreso">🔁 Cronológica</span>'
@@ -194,27 +314,23 @@ async function cargarTabla(lista) {
                 ${r.proyecto?.nombre?`<div><span style="color:${r.proyecto.color_etiqueta}">●</span> ${escapeHTML(r.proyecto.nombre)}</div>`:'<div style="color:var(--text-tertiary);">—</div>'}
               </td>
               <td>${esCron ? escapeHTML(etiquetaFrecuencia(r)) : '—'}</td>
+              <td>${r.hora_recordatorio ? r.hora_recordatorio.slice(0,5) : '—'}</td>
               <td>${r.fecha_cierre ? formatearFecha(r.fecha_cierre) : '—'}</td>
               <td><div class="avatar-group">${avatares}</div></td>
               <td><span class="badge badge-estado-${r.estado}">${ETIQUETAS_ESTADO[r.estado]??r.estado}</span></td>
-              <td style="white-space:nowrap;">
-                <button class="btn btn-icon" data-editar='${JSON.stringify(r).replace(/'/g,"&#39;")}' title="Editar">✏️</button>
-                <a class="btn btn-icon" href="tarea-detalle.html?id=${r.id}" title="Ver detalle">🔍</a>
-                <button class="btn btn-icon" data-eliminar="${r.id}" style="color:var(--color-danger)">🗑️</button>
-              </td>
             </tr>`;
           }).join('') : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:var(--space-6);">Sin tareas.</td></tr>`}
         </tbody>
       </table>
     </div>`;
 
-  $$('[data-editar]').forEach((b) => b.addEventListener('click', () => abrirEdicion(JSON.parse(b.dataset.editar.replace(/&#39;/g,"'")))));
-  $$('[data-eliminar]').forEach((b) => b.addEventListener('click', async () => {
-    const ok = await confirmar({ titulo: 'Eliminar tarea', mensaje: 'Se eliminarán también sus instancias futuras si es cronológica.', peligro: true, textoConfirmar: 'Eliminar' });
-    if (!ok) return;
-    try { await eliminarTarea(b.dataset.eliminar); toastExito('Eliminada.'); cargar(); }
-    catch (err) { toastError(err.message); }
-  }));
+  // Fila clickeable → abre panel lateral
+  $$('[data-abrir]').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const r = lista.find((x) => x.id === tr.dataset.abrir);
+      if (r) abrirPanelRec(r);
+    });
+  });
 }
 
 /* ============================================================ KANBAN CARD */
@@ -377,6 +493,11 @@ function toggleSeccionCronologica() {
   const esCron = $('#r-es-cronologica')?.checked;
   $('#grupo-frecuencia-completo').style.display = esCron ? 'block' : 'none';
   if (esCron) toggleFrecuencia();
+  // Actualizar label y obligatoriedad de fecha_cierre
+  const lbl = $('#label-fecha-cierre-txt');
+  const inp = $('#r-fecha-cierre');
+  if (lbl) lbl.textContent = esCron ? 'Fecha de cierre (opcional)' : 'Fecha de cierre *';
+  if (inp) inp.required = !esCron;
 }
 
 function toggleFrecuencia() {
@@ -412,9 +533,10 @@ async function abrirEdicion(r) {
   const esCron = r.tipo === 'cronologica';
   $('#r-es-cronologica').checked = esCron;
   toggleSeccionCronologica();
+  // hora_recordatorio siempre visible (puntual o cronológica)
+  $('#r-hora').value = r.hora_recordatorio?.substring(0, 5) || '09:00';
   if (esCron) {
     $('#r-frecuencia').value = r.frecuencia || 'diaria';
-    $('#r-hora').value       = r.hora_recordatorio || '09:00';
     toggleFrecuencia();
     if (r.frecuencia==='semanal')   $$('.dia-semana').forEach((c) => { c.checked=(r.dias_semana||[]).includes(c.value); });
     if (r.frecuencia==='mensual')   $('#r-dia-mes').value=r.dia_mes||1;
@@ -433,6 +555,10 @@ function intentarCerrar() {
 
 /* ============================================================ BIND */
 function bind() {
+  // Panel lateral
+  $('#btn-cerrar-panel-rec').addEventListener('click', cerrarPanelRec);
+  $('#panel-rec-overlay').addEventListener('click', cerrarPanelRec);
+
   $('#btn-cerrar-modal-rec').addEventListener('click', intentarCerrar);
   $('#btn-cancelar-rec').addEventListener('click', intentarCerrar);
   $('#modal-recordatorio').addEventListener('modal:request-close', intentarCerrar);
@@ -487,7 +613,7 @@ function bind() {
     $('#r-es-cronologica').checked = false;
     toggleSeccionCronologica();
     $('#r-frecuencia').value = 'diaria';
-    $('#r-hora').value = '09:00';
+    $('#r-hora').value = '09:00'; // siempre visible ahora
     $('#r-dia-mes').value = 1;
     $('#r-dia-q1').value = 15;
     $('#r-dia-q2').value = 30;
@@ -508,6 +634,14 @@ function bind() {
     const agentesIds   = $$('.agente-rec-check:checked').map((c) => c.value);
     const hoy          = new Date().toISOString().slice(0, 10);
 
+    // hora_recordatorio siempre requerida
+    const horaRec = $('#r-hora').value;
+    if (!horaRec) {
+      toastError('La hora de recordatorio es requerida');
+      $('#r-hora').focus();
+      return;
+    }
+
     // fecha_cierre requerida solo para tareas puntuales
     if (!esCronologica && !fechaCierre) {
       toastError('La fecha de cierre es requerida para tareas puntuales');
@@ -523,12 +657,12 @@ function bind() {
       descripcion:       $('#r-descripcion').value.trim() || null,
       es_cronologica:    esCronologica,
       frecuencia,
-      hora_recordatorio: esCronologica ? ($('#r-hora').value || null) : null,
+      hora_recordatorio: horaRec,
       dias_semana:       null,
       dia_mes:           null,
       dia_mes_2:         null,
       fecha_inicio:      esCronologica ? null : hoy,
-      fecha_cierre:      fechaCierre,
+      fecha_cierre:      fechaCierre || null,
       agentes_ids:       agentesIds
     };
 

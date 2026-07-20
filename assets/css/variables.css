@@ -101,9 +101,10 @@
   /* --- Z-index --- */
   --z-dropdown: 100;
   --z-sidebar: 200;
-  --z-modal-overlay: 300;
-  --z-modal: 310;
-  --z-toast: 400;
+  --z-modal-overlay: 300;   /* side-panel-overlay */
+  --z-modal: 310;           /* side-panel */
+  --z-dialog: 400;          /* modales de confirmación — por encima del side-panel */
+  --z-toast: 500;
 
   /* --- Layout --- */
   --sidebar-width: 260px;
