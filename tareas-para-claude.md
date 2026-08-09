@@ -1,8 +1,8 @@
 # Tareas para Claude
 
 **Proyecto:** Mejoras y Nuevos proyectos Website Pages
-**Actualizado:** 08/08/2026 07:50 a. m. (Lima)
-**Total pendientes:** 7
+**Actualizado:** 09/08/2026 07:50 a. m. (Lima)
+**Total pendientes:** 8
 
 ## Tareas
 
@@ -20,6 +20,8 @@
   > parecido al proyecto de publicidad de pantalla, este entra a un link o definir bien de que manera se conecta a la tv. porque escribir un link largo hmmmm no se, y el url de mi repo de git es larguito. definir eso y armar el sistema completo para accionar desde el celular como control remoto.
 - ⚪ **Sistema ERP administrativo contable** (nuevo) · 📅 2026-08-01
   > 1era etapa: modulos basicos de compras, inventario (hasta kardex), ventas y dashboard y la mayoria de los reportes de estos modulos 2do etapa: modulos avanzados de bancos, cuentas por cobrar y por pagar, etc
+- ⚪ **Automatizar el flujo de ventas completo** (nuevo) · 📅 2026-08-10
+  > sea con claude o gemini, hace facebook mcp https://mcp.facebook.com/ads que ya esta conectado a claude, hay q darle uso
 
 ---
 _Generado automaticamente por Edge Function nightly-tasks_
