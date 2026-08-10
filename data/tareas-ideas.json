@@ -13,7 +13,7 @@
       "descripcion": "Via API de google vincular la cuenta de google a travez auth supabase para leer y editar el google keep personal y otras apps de google (drive,gmail,etc)",
       "estado": "nuevo",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-03T00:00:00+00:00",
+      "fecha_cierre": "2026-08-10T00:00:00+00:00",
       "created_at": "2026-06-25T17:47:09.537784+00:00"
     },
     {
@@ -58,7 +58,7 @@
       "descripcion": "Mandar a hacer el diseño con IA de cara frontal y trasera y ponerle el codigo qr de esta pagina https://qr-code.io/es/qr?step=1&qr_onboarding=active_dpf&fx=c%C3%B3digo-QR&utm_source=google&utm_medium=cpc&utm_id=21676959310&utm_content=168666728524&utm_term=c%C3%B3digo+qr&network=g&matchtype=b&device=c&gaid=PE-ES-C-DPF&gad_source=1&gad_campaignid=21676959310&gbraid=0AAAAA-G5uJJ8SoTcWpX4hwuDmi69p-HJD&gclid=Cj0KCQjw8PDPBhCeARIsAOJwmWXNvayTGxlI167xvvN4FSkN-XdbV6NN384wXEBLUcCeASuLLQk0kBsaAooAEALw_wcB",
       "estado": "nuevo",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-03T00:00:00+00:00",
+      "fecha_cierre": "2026-08-10T00:00:00+00:00",
       "created_at": "2026-07-17T13:45:09.248507+00:00"
     },
     {
@@ -76,7 +76,7 @@
       "descripcion": "parecido al proyecto de publicidad de pantalla, este entra a un link o definir bien de que manera se conecta a la tv. porque escribir un link largo hmmmm no se, y el url de mi repo de git es larguito.\ndefinir eso y armar el sistema completo para accionar desde el celular como control remoto.",
       "estado": "nuevo",
       "prioridad": "critica",
-      "fecha_cierre": "2026-08-03T00:00:00+00:00",
+      "fecha_cierre": "2026-08-31T00:00:00+00:00",
       "created_at": "2026-07-25T18:57:50.012022+00:00"
     },
     {
@@ -87,7 +87,16 @@
       "prioridad": "critica",
       "fecha_cierre": "2026-08-01T00:00:00+00:00",
       "created_at": "2026-07-26T04:27:11.388488+00:00"
+    },
+    {
+      "id": "c5ea87e9-bad0-4f46-b892-471ae3dda055",
+      "titulo": "Automatizar el flujo de ventas completo",
+      "descripcion": "sea con claude o gemini, hace facebook mcp https://mcp.facebook.com/ads que ya esta conectado a claude, hay q darle uso",
+      "estado": "nuevo",
+      "prioridad": "critica",
+      "fecha_cierre": "2026-08-10T00:00:00+00:00",
+      "created_at": "2026-08-08T15:40:20.785973+00:00"
     }
   ],
-  "sync_at": "2026-08-03T11:13:10.826Z"
+  "sync_at": "2026-08-10T09:07:42.457Z"
 }
