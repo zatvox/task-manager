@@ -244,7 +244,7 @@ export async function inicializarSelectorEmpresa(agenteId) {
     });
   }
 
-  return activa;
+  return { empresaId: activa, empresas };
 }
 
 export function obtenerEmpresaActivaId() {
@@ -276,8 +276,11 @@ export async function inicializarApp() {
   marcarLinkActivo();
 
   let empresaId = null;
+  let empresas = [];
   try {
-    empresaId = await inicializarSelectorEmpresa(agente.id);
+    const sel = await inicializarSelectorEmpresa(agente.id);
+    empresaId = sel.empresaId;
+    empresas = sel.empresas;
   } catch (err) {
     console.error('[main] Error inicializando selector de empresa:', err.message);
   }
@@ -286,5 +289,5 @@ export async function inicializarApp() {
   document.querySelectorAll('[data-action="logout"]').forEach((btn) => btn.addEventListener('click', cerrarSesion));
   document.querySelectorAll('[data-action="toggle-tema"]').forEach((btn) => btn.addEventListener('click', alternarTema));
 
-  return { agente, empresaId };
+  return { agente, empresaId, empresas };
 }

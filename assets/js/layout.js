@@ -10,23 +10,24 @@ import { supabase } from './supabase-client.js';
 
 const NAV = [
   { seccion: 'General', links: [
-    { id: 'dashboard', href: '../index.html', icon: '🏠', label: 'Dashboard' },
-    { id: 'pendientes', href: 'pendientes.html', icon: '✅', label: 'Mis pendientes' },
-    { id: 'calendario', href: 'calendario.html', icon: '📅', label: 'Calendario' },
-    { id: 'notificaciones', href: 'notificaciones.html', icon: '🔔', label: 'Notificaciones' }
+    { id: 'dashboard',   href: '../index.html',    icon: '🏠', label: 'Dashboard' },
+    { id: 'pendientes',  href: 'pendientes.html',  icon: '✅', label: 'Mis pendientes' },
+    { id: 'calendario',  href: 'calendario.html',  icon: '📅', label: 'Calendario' },
+    { id: 'asistencia',  href: 'asistencia.html',  icon: '🕐', label: 'Asistencia' },
+    { id: 'rrhh',        href: 'rrhh.html',        icon: '👥', label: 'RRHH' },
+    { id: 'tesoreria',   href: 'tesoreria.html',   icon: '💰', label: 'Tesorería' },
   ]},
   { seccion: 'Organización', links: [
-    { id: 'empresas', href: 'empresas.html', icon: '🏢', label: 'Empresas' },
-    { id: 'departamentos', href: 'departamentos.html', icon: '🗂️', label: 'Departamentos' },
-    { id: 'proyectos', href: 'proyectos.html', icon: '📁', label: 'Proyectos' },
-    { id: 'tareas', href: 'tareas.html', icon: '📋', label: 'Tareas' },
-    { id: 'recordatorios', href: 'recordatorios.html', icon: '⏰', label: 'Recordatorios' }
+    { id: 'organizacion', href: 'organizacion.html', icon: '🗂️', label: 'Organización' },
   ]},
   { seccion: 'Gestión', links: [
-    { id: 'reportes', href: 'reportes.html', icon: '📊', label: 'Reportes' },
+    { id: 'reportes',      href: 'reportes.html',      icon: '📊', label: 'Reportes' },
     { id: 'configuracion', href: 'configuracion.html', icon: '⚙️', label: 'Configuración' }
   ]}
 ];
+
+// IDs que pertenecen a "Organización" (para marcar ese nav como activo aunque estemos en sub-página)
+const ORG_IDS = new Set(['organizacion', 'empresas', 'departamentos', 'proyectos', 'tareas', 'recordatorios']);
 
 function rutaDesde(activeId, href) {
   // index.html vive en la raíz; el resto vive en /pages
@@ -41,10 +42,13 @@ export function renderLayout(activeId, { mostrarBuscador = true } = {}) {
   const root = document.getElementById('layout-root');
   if (!root) return;
 
+  // Normaliza el activeId para que sub-páginas de Organización marquen el ítem correcto
+  const navActiveId = ORG_IDS.has(activeId) ? 'organizacion' : activeId;
+
   const navHTML = NAV.map((grupo) => `
     <div class="sidebar__section-title">${grupo.seccion}</div>
     ${grupo.links.map((l) => `
-      <a href="${rutaDesde(activeId, l.href)}" class="sidebar__link ${l.id === activeId ? 'active' : ''}" data-nav-id="${l.id}">
+      <a href="${rutaDesde(activeId, l.href)}" class="sidebar__link ${l.id === navActiveId ? 'active' : ''}" data-nav-id="${l.id}">
         <span class="icon" aria-hidden="true">${l.icon}</span>
         <span>${l.label}</span>
       </a>`).join('')}
