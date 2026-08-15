@@ -106,8 +106,9 @@ function actualizarWidgetTC(buy, sell, fecha, fallback) {
   if (!w) return;
   const hoy = new Date().toISOString().slice(0, 10);
   const esFallback = fallback || (fecha && fecha !== hoy);
-  const fechaLabel = esFallback && fecha
-    ? ` <span style="font-size:9px;color:var(--text-tertiary);margin-left:2px;">${fecha.slice(8,10)}/${fecha.slice(5,7)}</span>`
+  // Siempre muestra la fecha — en rojo/terciario si es fallback, normal si es de hoy
+  const fechaLabel = fecha
+    ? ` <span style="font-size:12px;color:${esFallback ? 'var(--color-danger)' : 'var(--text-tertiary)'};margin-left:4px;">${fecha.slice(8,10)}/${fecha.slice(5,7)}</span>`
     : '';
   w.innerHTML = `
     <span class="tc-label">USD/PEN</span>
@@ -118,7 +119,7 @@ function actualizarWidgetTC(buy, sell, fecha, fallback) {
   `;
   w.title = esFallback
     ? `Último TC registrado (${fecha}) — sin datos para hoy`
-    : `Tipo de cambio SUNAT del ${fecha || hoy} (Decolecta)`;
+    : `Tipo de cambio SUNAT del ${fecha} (Decolecta)`;
 }
 
 async function cargarTipoCambio() {

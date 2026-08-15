@@ -367,9 +367,9 @@ export async function crearTarea(datos) {
   const { agentes_ids, ...tareaData } = datos;
   const { data, error } = await supabase.from('tareas').insert(tareaData).select().single();
   manejarError('crearTarea', error);
-  if (agentes_ids?.length) {
-    await asignarAgentesATarea(data.id, agentes_ids);
-  }
+  if (agentes_ids?.length) await asignarAgentesATarea(data.id, agentes_ids);
+  // Generar instancias si es cronológica (vía RPC SECURITY DEFINER)
+  if (data.es_cronologica) await sincronizarRecordatorioPorTarea(data);
   return data;
 }
 
@@ -526,15 +526,10 @@ export async function listarRecordatorios(agenteId, filtros = {}) {
 /** Migración 009: genera instancias directamente desde tareas, sin RC */
 export async function sincronizarRecordatorioPorTarea(tarea, agentesIds = []) {
   try {
-    const hoy = new Date().toISOString().slice(0, 10);
-    // Borrar instancias futuras pendientes de esta tarea
-    await supabase.from('instancias_recordatorios')
-      .delete()
-      .eq('tarea_id', tarea.id)
-      .gte('fecha_programada', hoy)
-      .is('completado_en', null);
-    // Regenerar con nueva función (lee hora directamente de tareas)
-    await supabase.rpc('generar_instancias_tarea', { p_tarea_id: tarea.id, p_dias: 90 });
+    // regenerar_instancias_tarea es SECURITY DEFINER:
+    // borra instancias futuras no completadas y regenera en una sola llamada atómica,
+    // evitando el problema de RLS que bloqueaba el DELETE del cliente JS.
+    await supabase.rpc('regenerar_instancias_tarea', { p_tarea_id: tarea.id, p_dias: 90 });
   } catch (err) {
     console.warn('[sincronizarRecordatorioPorTarea]', err.message);
   }

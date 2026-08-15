@@ -3,7 +3,7 @@ import { inicializarApp, toastExito, toastError, abrirModal, cerrarModal, confir
 import {
   obtenerTareas, crearTarea, actualizarTarea, eliminarTarea, cambiarEstadoTarea,
   listarProyectos, listarAgentesDeEmpresa, obtenerEmpresasDelAgente, listarTodosLosProyectos,
-  reasignarAgentesATarea
+  reasignarAgentesATarea, sincronizarRecordatorioPorTarea
 } from './supabase-data.js';
 import {
   $, $$, qs, escapeHTML, formatearFecha, esVencida,
@@ -153,7 +153,7 @@ function plantilla() {
               <div class="form-row" style="margin-top:var(--space-3);">
                 <div class="form-group">
                   <label class="form-label">Hora de recordatorio</label>
-                  <input class="form-control" type="time" id="tarea-hora-recordatorio-crono" />
+                  <input class="form-control" type="time" id="tarea-hora-recordatorio-crono" value="09:00" />
                 </div>
                 <div class="form-group" style="visibility:hidden;"></div>
               </div>
@@ -610,8 +610,14 @@ function bind() {
     }
 
     try {
-      if (id) { delete datos.agentes_ids; delete datos.creador_id; await actualizarTarea(id, datos); }
-      else await crearTarea(datos);
+      if (id) {
+        delete datos.agentes_ids; delete datos.creador_id;
+        const tareaActualizada = await actualizarTarea(id, datos);
+        // Regenerar instancias si es cronológica (cambia frecuencia, dia_mes, hora, etc.)
+        if (tareaActualizada.es_cronologica) await sincronizarRecordatorioPorTarea(tareaActualizada);
+      } else {
+        await crearTarea(datos); // crearTarea ya llama sincronizarRecordatorioPorTarea internamente
+      }
       toastExito('Tarea guardada.');
       formDirty = false;
       cerrarModal('modal-tarea');
