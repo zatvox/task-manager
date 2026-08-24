@@ -13,7 +13,7 @@
       "descripcion": "Via API de google vincular la cuenta de google a travez auth supabase para leer y editar el google keep personal y otras apps de google (drive,gmail,etc)",
       "estado": "nuevo",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-10T00:00:00+00:00",
+      "fecha_cierre": "2026-08-31T00:00:00+00:00",
       "created_at": "2026-06-25T17:47:09.537784+00:00"
     },
     {
@@ -29,9 +29,9 @@
       "id": "8a7a990b-44ec-47fa-9191-4a9e9c812f15",
       "titulo": "Sistema de prediccion de apuestas deportivas",
       "descripcion": "A travez de APIs gratuitas obtener informacion y estadistica de los equipos actuales y sus partidos recientes asi como explican en este video https://www.instagram.com/p/DZyPsKBhDjo/",
-      "estado": "en_revision",
+      "estado": "en_progreso",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-03T00:00:00+00:00",
+      "fecha_cierre": "2026-08-31T00:00:00+00:00",
       "created_at": "2026-06-26T14:16:48.883486+00:00"
     },
     {
@@ -49,7 +49,7 @@
       "descripcion": "Sistema que ayude a la gestión de alquiler o proyectos de venta de inmuebles, con módulos de inmuebles, Ventas, alquileres, cobranzas, pagos etc totalmente completo y funcional en web y mobile, apoyarse de apps similares en el mercado reconocidas y populares. ",
       "estado": "nuevo",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-03T00:00:00+00:00",
+      "fecha_cierre": "2026-08-24T00:00:00+00:00",
       "created_at": "2026-07-16T23:10:52.529052+00:00"
     },
     {
@@ -58,7 +58,7 @@
       "descripcion": "Mandar a hacer el diseño con IA de cara frontal y trasera y ponerle el codigo qr de esta pagina https://qr-code.io/es/qr?step=1&qr_onboarding=active_dpf&fx=c%C3%B3digo-QR&utm_source=google&utm_medium=cpc&utm_id=21676959310&utm_content=168666728524&utm_term=c%C3%B3digo+qr&network=g&matchtype=b&device=c&gaid=PE-ES-C-DPF&gad_source=1&gad_campaignid=21676959310&gbraid=0AAAAA-G5uJJ8SoTcWpX4hwuDmi69p-HJD&gclid=Cj0KCQjw8PDPBhCeARIsAOJwmWXNvayTGxlI167xvvN4FSkN-XdbV6NN384wXEBLUcCeASuLLQk0kBsaAooAEALw_wcB",
       "estado": "nuevo",
       "prioridad": "alta",
-      "fecha_cierre": "2026-08-10T00:00:00+00:00",
+      "fecha_cierre": "2026-08-18T00:00:00+00:00",
       "created_at": "2026-07-17T13:45:09.248507+00:00"
     },
     {
@@ -67,7 +67,7 @@
       "descripcion": "crear index y modulos principales por cada comision y perfiles de usuarios",
       "estado": "en_progreso",
       "prioridad": "critica",
-      "fecha_cierre": "2026-08-01T00:00:00+00:00",
+      "fecha_cierre": "2026-08-18T00:00:00+00:00",
       "created_at": "2026-07-20T05:13:57.452679+00:00"
     },
     {
@@ -85,7 +85,7 @@
       "descripcion": "1era etapa: modulos basicos de compras, inventario (hasta kardex), ventas y dashboard y la mayoria de los reportes de estos modulos\n2do etapa: modulos avanzados de bancos, cuentas por cobrar y por pagar, etc",
       "estado": "nuevo",
       "prioridad": "critica",
-      "fecha_cierre": "2026-08-01T00:00:00+00:00",
+      "fecha_cierre": "2026-08-18T00:00:00+00:00",
       "created_at": "2026-07-26T04:27:11.388488+00:00"
     },
     {
@@ -94,9 +94,9 @@
       "descripcion": "sea con claude o gemini, hace facebook mcp https://mcp.facebook.com/ads que ya esta conectado a claude, hay q darle uso",
       "estado": "nuevo",
       "prioridad": "critica",
-      "fecha_cierre": "2026-08-10T00:00:00+00:00",
+      "fecha_cierre": "2026-08-24T00:00:00+00:00",
       "created_at": "2026-08-08T15:40:20.785973+00:00"
     }
   ],
-  "sync_at": "2026-08-17T08:31:51.263Z"
+  "sync_at": "2026-08-24T08:36:26.138Z"
 }
